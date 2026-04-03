@@ -360,6 +360,18 @@ main{max-width:1400px;margin:0 auto;padding:28px}
     </select>
   </div>
 
+  <div class="divider"></div>
+
+  <div class="sg">
+    <span class="slabel">🖨 Copies</span>
+    <input type="number" id="copiesInput" min="1" max="200" value="1"
+      title="Number of copies of each photo on the print sheet"
+      style="width:66px;background:var(--card);border:1px solid var(--amber);
+      color:var(--amber);font-family:var(--fm);font-size:13px;font-weight:700;
+      padding:5px 8px;border-radius:4px;outline:none;text-align:center;cursor:pointer">
+    <span class="slabel">per photo</span>
+  </div>
+
 </div>
 
 <!-- MAIN -->
@@ -481,6 +493,9 @@ document.getElementById('dpiSel').addEventListener('change', e => {
 });
 document.getElementById('bgSel').addEventListener('change', e => {
   S.bg = e.target.value; reprocessAll();
+});
+document.getElementById('copiesInput').addEventListener('input', () => {
+  buildPrintPreview(); buildPrintSheet();
 });
 
 // Toggle buttons
@@ -620,9 +635,15 @@ function cropToPassport(src, preset, dpi) {
   const sa = src.width / src.height, da = tw / th;
   let dw, dh, ox, oy;
   if (sa > da) {
-    dh = th; dw = src.width * (th / src.height); ox = (tw - dw) / 2; oy = 0;
+    // Source wider than passport — fit height, center horizontally
+    dh = th; dw = src.width * (th / src.height);
+    ox = (tw - dw) / 2; oy = 0;
   } else {
-    dw = tw; dh = src.height * (tw / src.width); ox = 0; oy = (th - dh) / 2;
+    // Source taller than passport — fit width, focus on UPPER/face area (not center)
+    dw = tw; dh = src.height * (tw / src.width);
+    ox = 0;
+    // 0.2 bias → shows top 80% of overflow, keeping face in frame
+    oy = (th - dh) * 0.20;
   }
   ctx.drawImage(src, ox, oy, dw, dh);
   return c;
@@ -773,12 +794,21 @@ function clearAll() {
   actionBar.style.display = 'none';
 }
 
+// ── EXPAND PHOTOS BY COPIES ───────────────────────────────────────────────────
+function getPhotosForPrint() {
+  const copies = Math.max(1, parseInt(document.getElementById('copiesInput').value) || 1);
+  const result = [];
+  photos.forEach(p => { for (let i = 0; i < copies; i++) result.push(p); });
+  return result;
+}
+
 // ── PRINT PREVIEW (on-screen A4) ─────────────────────────────────────────────
 function buildPrintPreview() {
   if (!photos.length) return;
   const preset = PRESETS[S.preset];
   const cols = S.cols;
-  const pageW = 557; // 595 - 38 padding
+  const printPhotos = getPhotosForPrint();
+  const pageW = 557;
   const gap = 7;
   const photoW = Math.floor((pageW - (cols-1)*gap) / cols);
   const photoH = Math.round(photoW * preset.h / preset.w);
@@ -786,7 +816,7 @@ function buildPrintPreview() {
   a4Paper.innerHTML = '';
   a4Paper.style.gap = gap + 'px';
 
-  photos.forEach(p => {
+  printPhotos.forEach(p => {
     const img = document.createElement('img');
     img.src = p.enhancedURL; img.className = 'pv-photo';
     img.style.width = photoW + 'px'; img.style.height = photoH + 'px';
@@ -794,13 +824,13 @@ function buildPrintPreview() {
     a4Paper.appendChild(img);
   });
 
-  const rows = Math.ceil(photos.length / cols);
+  const rows = Math.ceil(printPhotos.length / cols);
   a4Paper.style.minHeight = Math.max(842, rows*(photoH+gap)+38) + 'px';
 
-  // Info
   const mm2px = mm => Math.round(mm/25.4*S.dpi);
+  const copies = Math.max(1, parseInt(document.getElementById('copiesInput').value) || 1);
   document.getElementById('pvInfo').textContent =
-    `${photos.length} photos · ${preset.label} · ${mm2px(preset.w)}×${mm2px(preset.h)}px @ ${S.dpi}DPI`;
+    `${printPhotos.length} photos (${photos.length} × ${copies} copies) · ${preset.label} · ${mm2px(preset.w)}×${mm2px(preset.h)}px @ ${S.dpi}DPI`;
 }
 
 // ── PRINT SHEET (actual print) ────────────────────────────────────────────────
@@ -812,10 +842,11 @@ function buildPrintSheet() {
   const maxCols = Math.min(S.cols, Math.floor((pageW_mm + gap_mm) / (preset.w + gap_mm)));
   const maxRows = Math.floor((pageH_mm + gap_mm) / (preset.h + gap_mm));
   const perPage = maxCols * maxRows;
+  const printPhotos = getPhotosForPrint();
 
   printSheet.innerHTML = '';
-  for (let i = 0; i < photos.length; i += perPage) {
-    const slice = photos.slice(i, i + perPage);
+  for (let i = 0; i < printPhotos.length; i += perPage) {
+    const slice = printPhotos.slice(i, i + perPage);
     const page = document.createElement('div');
     page.className = 'print-page';
     page.style.cssText = `
