@@ -228,34 +228,39 @@ function get2d(canvas, willReadFrequently = false) {
 // ══════════════════════════════════════════════════════════════
 let blazeModel = null;
 
-// ── @imgly/background-removal (ISNet — remove.bg quality, free forever) ──
+// ── @imgly/background-removal v1.7.0 (ISNet — remove.bg quality, free forever) ──
+// ESM file: dist/index.mjs  |  Models auto-served from staticimgly.com CDN
 let bgRemovalLib = null;
-const IMGLY_CDN = 'https://cdn.jsdelivr.net/npm/@imgly/background-removal@1.4.5/dist/';
+const IMGLY_VERSION = '1.7.0';
+// Try URLs in order — stop at first success
+const IMGLY_URLS = [
+  `https://cdn.jsdelivr.net/npm/@imgly/background-removal@${IMGLY_VERSION}/dist/index.mjs`,
+  `https://unpkg.com/@imgly/background-removal@${IMGLY_VERSION}/dist/index.mjs`,
+];
 
 async function loadBgRemoval() {
-  try {
-    setBadge('badgeBg', '⏳ LOADING ISNet...', 'warn');
-    // Dynamic ESM import
-    const mod = await import(
-      'https://cdn.jsdelivr.net/npm/@imgly/background-removal@1.4.5/dist/bundle.browser.esm.js'
-    );
-    bgRemovalLib = mod;
-    // Warm-up: first call downloads & caches the model (~87MB fp16)
-    setBadge('badgeBg', '⏳ WARMING UP...', 'warn');
-    const warmCanvas = document.createElement('canvas');
-    warmCanvas.width = 64; warmCanvas.height = 64;
-    const warmBlob = await new Promise(r => warmCanvas.toBlob(r, 'image/jpeg', 0.5));
-    await bgRemovalLib.removeBackground(warmBlob, {
-      publicPath: IMGLY_CDN,
-      model: 'isnet_fp16',       // fp16 = ~87MB, excellent quality
-      output: { format: 'image/png', quality: 1 }
-    });
-    setBadge('badgeBg', '✓ ISNet READY', 'ok');
-    console.log('BG removal (ISNet fp16) ready');
-  } catch(e) {
-    console.warn('BG removal load failed:', e.message);
-    setBadge('badgeBg', '⚠ BG UNAVAIL', 'warn');
+  for (const url of IMGLY_URLS) {
+    try {
+      setBadge('badgeBg', '⏳ LOADING ISNet...', 'warn');
+      const mod = await import(url);
+      if (typeof mod.removeBackground !== 'function') throw new Error('Bad export');
+      bgRemovalLib = mod;
+      // Warm-up: downloads & caches model from staticimgly.com (~87MB fp16, cached forever)
+      setBadge('badgeBg', '⏳ CACHING MODEL...', 'warn');
+      const warmC = document.createElement('canvas'); warmC.width=64; warmC.height=64;
+      const warmBlob = await new Promise(r => warmC.toBlob(r,'image/jpeg',0.5));
+      await bgRemovalLib.removeBackground(warmBlob, {
+        model: 'isnet_fp16',
+        output: { format:'image/png', quality:1 }
+      });
+      setBadge('badgeBg', '✓ ISNet READY', 'ok');
+      console.log('BG removal (ISNet fp16) ready via', url);
+      return;
+    } catch(e) {
+      console.warn('BG removal attempt failed:', url, e.message);
+    }
   }
+  setBadge('badgeBg', '⚠ BG UNAVAIL', 'warn');
 }
 
 async function loadBlazeFace() {
@@ -440,13 +445,10 @@ async function applyBgRemoval(srcCanvas) {
   );
 
   // Run ISNet segmentation — returns PNG Blob with alpha channel
+  // publicPath auto-resolves to staticimgly.com CDN (no manual config needed)
   const resultBlob = await bgRemovalLib.removeBackground(srcBlob, {
-    publicPath: IMGLY_CDN,
     model: 'isnet_fp16',
-    output: {
-      format: 'image/png',
-      quality: 1,
-    }
+    output: { format: 'image/png', quality: 1 }
   });
 
   // Load result image (RGBA PNG with transparent background)
