@@ -517,17 +517,27 @@ function compositeMask(srcCanvas, maskCanvas) {
   const srcPx  = get2d(srcCanvas,true).getImageData(0,0,w,h).data;
   const maskPx = get2d(maskCanvas,true).getImageData(0,0,w,h).data;
   const bg = hexToRgb(S.bg);
-  const outC = document.createElement('canvas'); outC.width=w; outC.height=h;
+
+  const outC = document.createElement('canvas');
+  outC.width=w; outC.height=h;
   const outCtx = get2d(outC,true);
   const outImg = outCtx.createImageData(w,h);
   const outPx = outImg.data;
+
   for(let i=0;i<srcPx.length;i+=4){
-    const a=maskPx[i]/255;
-    outPx[i]  =Math.round(srcPx[i]  *a + bg.r*(1-a));
-    outPx[i+1]=Math.round(srcPx[i+1]*a + bg.g*(1-a));
-    outPx[i+2]=Math.round(srcPx[i+2]*a + bg.b*(1-a));
-    outPx[i+3]=255;
+    let a = maskPx[i]/255;
+
+    // 🔥 feather edge (important fix)
+    if(a > 0.1 && a < 0.9){
+      a = a * a * (3 - 2 * a); // smoothstep
+    }
+
+    outPx[i]   = srcPx[i]*a + bg.r*(1-a);
+    outPx[i+1] = srcPx[i+1]*a + bg.g*(1-a);
+    outPx[i+2] = srcPx[i+2]*a + bg.b*(1-a);
+    outPx[i+3] = 255;
   }
+
   outCtx.putImageData(outImg,0,0);
   return outC;
 }
@@ -606,7 +616,7 @@ function cropToPassport(src, preset, dpi, detection) {
     // Position: crown lands at 8% from top of output photo
     const srcY = crownY - (th * 0.08 / scale);
     // Horizontally center on face center
-    const srcX = faceCX - srcPhotoW / 2;
+    const srcX = Math.max(0, Math.min(src.width - srcPhotoW, faceCX - srcPhotoW / 2));
 
     ctx.drawImage(src, srcX, srcY, srcPhotoW, srcPhotoH, 0, 0, tw, th);
 
@@ -663,15 +673,14 @@ async function processPhoto(srcCanvas) {
 // Order: WB → CLAHE → Vibrance → S-curve → Skin smooth → Sharpen
 // ══════════════════════════════════════════════════════════════
 function enhance(c){
-  const ctx=get2d(c, true), w=c.width, h=c.height;
-  let id;
-  if(S.whiteBalance){ id=ctx.getImageData(0,0,w,h); doWhiteBalance(id.data); ctx.putImageData(id,0,0); }
-  if(S.autoLevels)  { id=ctx.getImageData(0,0,w,h); doCLAHE(id.data,w,h); ctx.putImageData(id,0,0); }
-  if(S.brighten)    { id=ctx.getImageData(0,0,w,h); doSCurve(id.data); ctx.putImageData(id,0,0); }
-  if(S.autoLevels)  { id=ctx.getImageData(0,0,w,h); doVibrance(id.data, 30); ctx.putImageData(id,0,0); }
-  if(S.skinSmooth)  { id=ctx.getImageData(0,0,w,h); doSkinSmooth(id,w,h,3); ctx.putImageData(id,0,0); }
-  if(S.sharpen)     { id=ctx.getImageData(0,0,w,h); ctx.putImageData(doUnsharpMask(id,w,h,0.8,1.8),0,0); }
-  if(S.sharpen)     { id=ctx.getImageData(0,0,w,h); ctx.putImageData(doUnsharpMask(id,w,h,0.4,0.8),0,0); }
+  const ctx = get2d(c, true);
+  const w = c.width, h = c.height;
+
+  if(S.skinSmooth){
+    let id = ctx.getImageData(0,0,w,h);
+    doSkinSmooth(id, w, h);
+    ctx.putImageData(id,0,0);
+  }
 }
 
 function doWhiteBalance(d){
@@ -741,36 +750,50 @@ function doVibrance(d, amt) {
   }
 }
 
-// Stronger skin smooth with larger radius and bilateral-style edge protection
 function doSkinSmooth(imageData, w, h, radius=2){
-  const d=imageData.data, tmp=new Uint8ClampedArray(d);
-  const isSkin=(r,g,b)=>{
-    // Broader skin detection: Ycbcr skin range
+  const d = imageData.data;
+  const tmp = new Uint8ClampedArray(d);
+
+  const isSkin = (r,g,b)=>{
     const Y=0.299*r+0.587*g+0.114*b;
     const Cb=-0.169*r-0.331*g+0.5*b+128;
     const Cr=0.5*r-0.419*g-0.081*b+128;
-    return Y>40&&Y<230&&Cb>=77&&Cb<=127&&Cr>=133&&Cr<=173;
+    return Y>60 && Y<220 && Cb>80 && Cb<130 && Cr>135 && Cr<175;
   };
-  for(let y=radius;y<h-radius;y++) for(let x=radius;x<w-radius;x++){
-    const ci=(y*w+x)*4;
-    if(!isSkin(d[ci],d[ci+1],d[ci+2])) continue;
-    let sr=0,sg=0,sb=0,cnt=0, wsum=0;
-    for(let dy=-radius;dy<=radius;dy++) for(let dx=-radius;dx<=radius;dx++){
-      const ni=((y+dy)*w+(x+dx))*4;
-      if(!isSkin(d[ni],d[ni+1],d[ni+2])) continue;
-      // Bilateral weight: penalise pixels with very different brightness (edge-preserve)
-      const dLum=Math.abs((d[ci]+d[ci+1]+d[ci+2])-(d[ni]+d[ni+1]+d[ni+2]));
-      const w2=Math.exp(-(dx*dx+dy*dy)/(2*radius*radius))*(1-dLum/512);
-      sr+=d[ni]*w2; sg+=d[ni+1]*w2; sb+=d[ni+2]*w2; wsum+=w2; cnt++;
-    }
-    if(wsum>0){
-      // Blend 70% smoothed + 30% original (preserve texture)
-      tmp[ci]  =Math.round((d[ci]  *0.3)+(sr/wsum*0.7));
-      tmp[ci+1]=Math.round((d[ci+1]*0.3)+(sg/wsum*0.7));
-      tmp[ci+2]=Math.round((d[ci+2]*0.3)+(sb/wsum*0.7));
+
+  for(let y=1;y<h-1;y++){
+    for(let x=1;x<w-1;x++){
+      const i=(y*w+x)*4;
+
+      if(!isSkin(d[i],d[i+1],d[i+2])) continue;
+
+      // Edge detection (DO NOT smooth edges)
+      const gx = d[i] - d[i-4];
+      const gy = d[i] - d[i-w*4];
+      const edge = Math.abs(gx)+Math.abs(gy);
+
+      if(edge > 20) continue; // preserve details
+
+      let sr=0,sg=0,sb=0,count=0;
+
+      for(let dy=-1;dy<=1;dy++){
+        for(let dx=-1;dx<=1;dx++){
+          const ni=((y+dy)*w+(x+dx))*4;
+          sr+=d[ni]; sg+=d[ni+1]; sb+=d[ni+2];
+          count++;
+        }
+      }
+
+      // very light smoothing (NOT blur)
+      tmp[i]   = d[i]*0.6 + (sr/count)*0.4;
+      tmp[i+1] = d[i+1]*0.6 + (sg/count)*0.4;
+      tmp[i+2] = d[i+2]*0.6 + (sb/count)*0.4;
     }
   }
-  for(let i=0;i<d.length;i++) imageData.data[i]=tmp[i];
+
+  for(let i=0;i<d.length;i++){
+    if(tmp[i]!==0) d[i]=tmp[i];
+  }
 }
 
 // Unsharp mask with configurable radius and amount
