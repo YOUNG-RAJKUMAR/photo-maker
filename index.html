@@ -7,12 +7,7 @@
 <script src="https://cdn.jsdelivr.net/npm/@mediapipe/selfie_segmentation/selfie_segmentation.js" crossorigin="anonymous"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs-core@4.17.0/dist/tf-core.min.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs-converter@4.17.0/dist/tf-converter.min.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs-backend-webgl@4.17.0/dist/tf-backend-webgl.min.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs-backend-wasm@4.17.0/dist/tf-backend-wasm.min.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs-backend-cpu@4.17.0/dist/tf-backend-cpu.min.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/blazeface@0.0.7/dist/blazeface.min.js"></script>
+<!-- TF.js/BlazeFace removed — using smart crop heuristic instead -->
 <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Space+Mono:wght@400;700&family=Outfit:wght@300;400;500;600&display=swap" rel="stylesheet">
 <style>
 :root{
@@ -120,7 +115,7 @@ main{max-width:1400px;margin:0 auto;padding:28px}
 
 <header>
   <div class="logo">STUDIO<b>SNAP</b></div>
-  <div class="tagline">Passport Photo Studio · MediaPipe BG Removal · Free Forever</div>
+  <div class="tagline">Passport Photo Studio · MediaPipe BG Removal · Smart Crop · Free Forever</div>
   <div class="hdr-right">
     <span class="badge live">● OFFLINE READY</span>
     <span class="badge warn" id="badgeFace">⏳ FACE AI...</span>
@@ -226,8 +221,8 @@ function get2d(canvas, willReadFrequently = false) {
 // ══════════════════════════════════════════════════════════════
 // AI MODELS
 // ══════════════════════════════════════════════════════════════
-let blazeModel = null;
-let segmenter  = null;  // MediaPipe SelfieSegmentation instance
+let segmenter = null;  // MediaPipe SelfieSegmentation instance
+// No BlazeFace — using smart crop heuristic (upper-biased center crop for passport photos)
 
 // ── MediaPipe SelfieSegmentation ──────────────────────────────
 async function loadBgRemoval() {
@@ -287,27 +282,17 @@ async function applyBgRemoval(srcCanvas) {
   });
 }
 
-// ── BlazeFace ─────────────────────────────────────────────────
-async function loadBlazeFace() {
-  try {
-    try { await tf.setBackend('wasm'); await tf.ready(); }
-    catch { await tf.setBackend('cpu'); await tf.ready(); }
-    blazeModel = await blazeface.load();
-    setBadge('badgeFace', '✓ FACE AI', 'ok');
-  } catch (e) {
-    setBadge('badgeFace', '⚠ SMART CROP', 'warn');
-    console.warn('BlazeFace failed:', e.message);
-  }
-}
+
 
 function setBadge(id, text, cls) {
   const b = document.getElementById(id);
   b.textContent = text; b.className = 'badge ' + cls;
 }
 
-// Start both models immediately on page load
-loadBlazeFace();
+// Start BG model
 loadBgRemoval();
+// Face badge — smart crop heuristic, no external model needed
+setBadge('badgeFace', '✓ SMART CROP', 'ok');
 
 // ══════════════════════════════════════════════════════════════
 // PRESETS
@@ -455,15 +440,26 @@ function cloneCanvas(s) {
 }
 
 // ══════════════════════════════════════════════════════════════
-// FACE DETECTION — BlazeFace
+// FACE CROP — Smart heuristic (no external model needed)
+// For passport photos: face is almost always in the upper 60%
+// of the frame. We return a synthetic "detection" box so the
+// same cropToPassport() logic works without modification.
 // ══════════════════════════════════════════════════════════════
 async function detectFace(canvas) {
-  if (!blazeModel || !S.faceAlign) return null;
-  try {
-    const preds = await blazeModel.estimateFaces(canvas, false);
-    if (!preds.length) return null;
-    return preds.reduce((a, b) => a.probability[0] > b.probability[0] ? a : b);
-  } catch (e) { console.warn('BlazeFace err:', e.message); return null; }
+  if (!S.faceAlign) return null;
+  const w = canvas.width, h = canvas.height;
+  // Assume face occupies center-x, upper 55% of image
+  const faceW = w * 0.45;
+  const faceH = h * 0.38;
+  const x1 = (w - faceW) / 2;
+  const y1 = h * 0.08;
+  const x2 = x1 + faceW;
+  const y2 = y1 + faceH;
+  return {
+    topLeft: [x1, y1],
+    bottomRight: [x2, y2],
+    probability: [0.99]
+  };
 }
 
 // ══════════════════════════════════════════════════════════════
@@ -530,8 +526,8 @@ async function processPhoto(srcCanvas) {
     }
   }
 
-  const detection = await detectFace(work);
-  const faceDetected = !!detection;
+  const detection   = await detectFace(work);
+  const faceDetected = true; // heuristic always provides a crop box
 
   const preset  = PRESETS[S.preset];
   const cropped = cropToPassport(work, preset, S.dpi, detection);
@@ -611,9 +607,7 @@ async function reprocessAll() {
 function addCard({ id, name, originalURL, enhancedURL, faceDetected, bgRemoved }) {
   const card = document.createElement('div');
   card.className = 'photo-card'; card.dataset.id = id;
-  const ftag = faceDetected
-    ? `<span class="tag face">👤 AI</span>`
-    : `<span class="tag fallback">📐 AUTO</span>`;
+  const ftag = `<span class="tag face">📐 SMART CROP</span>`;
   const btag = bgRemoved ? `<span class="tag bg">✂ BG</span>` : '';
   card.innerHTML = `
     <div class="card-imgs">
