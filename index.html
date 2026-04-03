@@ -2,12 +2,11 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
-<title>NeuralVisage — Auto Face Enhancer | Skin Tone · Color · HDR · Smooth HD</title>
-<!-- Core libraries -->
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>StudioSnap — Auto Face Enhancer · Orange Skin Smooth</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
-<!-- TensorFlow.js + backends -->
+<!-- TensorFlow.js core + backends + BlazeFace + Body Segmentation -->
 <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs-core@4.17.0/dist/tf-core.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs-converter@4.17.0/dist/tf-converter.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs-backend-webgl@4.17.0/dist/tf-backend-webgl.min.js"></script>
@@ -15,344 +14,683 @@
 <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs-backend-cpu@4.17.0/dist/tf-backend-cpu.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/blazeface@0.0.7/dist/blazeface.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/body-segmentation@1.0.0/dist/body-segmentation.min.js"></script>
-<!-- Fonts & Style -->
-<link href="https://fonts.googleapis.com/css2?family=Inter:opsz,wght@14..32,300;14..32,400;14..32,600;14..32,700&family=Space+Mono:wght@400;700&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Space+Mono:wght@400;700&family=Outfit:wght@300;400;500;600&display=swap" rel="stylesheet">
 <style>
-  * { margin: 0; padding: 0; box-sizing: border-box; }
-  :root {
-    --bg: #0A0A0F; --panel: #111118; --card: #1A1A24; --border: #2A2A35;
-    --amber: #F5A623; --amber-glow: rgba(245,166,35,0.12); --green: #2ecc71;
-    --red: #e74c3c; --blue: #3498db; --text: #F0F0F5; --muted: #7F8C8D;
-    --ff: 'Inter', sans-serif; --fm: 'Space Mono', monospace;
-  }
-  body { background: var(--bg); color: var(--text); font-family: var(--ff); overflow-x: hidden; }
-  header { position: sticky; top: 0; z-index: 200; background: rgba(10,10,15,0.92); backdrop-filter: blur(14px); border-bottom: 1px solid var(--border); padding: 12px 28px; display: flex; align-items: center; gap: 20px; flex-wrap: wrap; }
-  .logo { font-size: 28px; font-weight: 700; letter-spacing: -0.5px; background: linear-gradient(135deg, #F5A623, #E67E22); -webkit-background-clip: text; background-clip: text; color: transparent; }
-  .logo span { font-weight: 400; color: var(--muted); background: none; -webkit-background-clip: unset; }
-  .badge-group { display: flex; gap: 8px; margin-left: auto; }
-  .badge { font-family: var(--fm); font-size: 9px; padding: 4px 10px; border-radius: 20px; background: rgba(255,255,255,0.03); border: 1px solid var(--border); color: var(--muted); text-transform: uppercase; letter-spacing: 0.05em; }
-  .badge.ok { border-color: var(--green); color: var(--green); background: rgba(46,204,113,0.08); }
-  .badge.warn { border-color: var(--amber); color: var(--amber); background: rgba(245,166,35,0.08); }
-  .toolbar { background: var(--panel); border-bottom: 1px solid var(--border); padding: 12px 28px; display: flex; flex-wrap: wrap; gap: 16px; align-items: center; }
-  .tog-group { display: flex; gap: 8px; background: rgba(0,0,0,0.2); padding: 4px 12px; border-radius: 48px; border: 1px solid var(--border); }
-  .tog { background: transparent; border: none; font-family: var(--fm); font-size: 10px; text-transform: uppercase; padding: 6px 14px; border-radius: 32px; cursor: pointer; color: var(--muted); transition: all 0.2s; font-weight: 600; letter-spacing: 0.03em; }
-  .tog.on { background: var(--amber); color: #000; box-shadow: 0 2px 6px rgba(245,166,35,0.3); }
-  .tog.feature { background: rgba(245,166,35,0.1); border: 1px solid rgba(245,166,35,0.3); color: var(--amber); }
-  .tog.feature.on { background: var(--amber); color: #000; }
-  select, .num-input { background: var(--card); border: 1px solid var(--border); color: var(--text); font-family: var(--fm); font-size: 11px; padding: 6px 12px; border-radius: 24px; cursor: pointer; outline: none; }
-  .divider { width: 1px; height: 26px; background: var(--border); margin: 0 4px; }
-  main { max-width: 1400px; margin: 0 auto; padding: 28px; }
-  .upload-zone { border: 2px dashed var(--border); border-radius: 24px; background: var(--panel); padding: 48px 24px; text-align: center; cursor: pointer; transition: all 0.2s; margin-bottom: 32px; }
-  .upload-zone.drag-over { border-color: var(--amber); background: var(--amber-glow); }
-  .up-icon { font-size: 48px; margin-bottom: 12px; }
-  .up-title { font-size: 26px; font-weight: 700; letter-spacing: -0.3px; margin-bottom: 6px; }
-  .up-btn { background: var(--amber); color: #000; border: none; padding: 10px 28px; border-radius: 40px; font-weight: 700; margin-top: 18px; cursor: pointer; transition: 0.15s; }
-  .photo-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 18px; margin-top: 20px; }
-  .photo-card { background: var(--card); border-radius: 20px; border: 1px solid var(--border); overflow: hidden; transition: transform 0.2s; }
-  .card-imgs { display: flex; gap: 1px; background: #000; }
-  .cimg-wrap { flex: 1; position: relative; aspect-ratio: 35/45; background: #1a1a1a; }
-  .cimg-wrap img { width: 100%; height: 100%; object-fit: cover; }
-  .cimg-label { position: absolute; bottom: 6px; left: 6px; font-size: 8px; background: rgba(0,0,0,0.7); padding: 2px 6px; border-radius: 12px; font-family: var(--fm); }
-  .card-foot { padding: 10px 12px; display: flex; gap: 8px; align-items: center; flex-wrap: wrap; border-top: 1px solid var(--border); }
-  .tag { font-size: 8px; padding: 3px 8px; border-radius: 20px; background: rgba(255,255,255,0.05); font-family: var(--fm); }
-  .tag.face { color: var(--green); border: 1px solid var(--green); }
-  .tag.enh { background: var(--amber); color: #000; border: none; }
-  .a4-preview { background: #fff; width: 100%; max-width: 620px; margin: 0 auto; border-radius: 12px; padding: 20px; display: flex; flex-wrap: wrap; gap: 6px; box-shadow: 0 12px 28px rgba(0,0,0,0.5); }
-  .btn { padding: 10px 22px; border-radius: 40px; font-weight: 600; cursor: pointer; background: var(--card); border: 1px solid var(--border); color: var(--text); }
-  .btn-primary { background: var(--amber); color: #000; border: none; }
-  #toast { position: fixed; bottom: 24px; right: 24px; background: #1e1e2a; border-left: 4px solid var(--amber); padding: 12px 20px; border-radius: 12px; font-family: var(--fm); font-size: 12px; opacity: 0; transition: 0.2s; pointer-events: none; z-index: 9999; }
-  @media print { body > *:not(#printSheet) { display: none; } #printSheet { display: block; } .print-page { page-break-after: always; } }
+:root{
+  --bg:#080809;--panel:#101013;--card:#17171b;--border:#252529;--border2:#333339;
+  --amber:#e09a2a;--amber-d:rgba(224,154,42,0.10);--red:#d63031;--green:#00b894;--blue:#0984e3;
+  --text:#ede8e0;--muted:#66667a;--sub:#44445a;
+  --ff:'Bebas Neue',sans-serif;--fm:'Space Mono',monospace;--fb:'Outfit',sans-serif;
+}
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+html{scroll-behavior:smooth}
+body{background:var(--bg);color:var(--text);font-family:var(--fb);min-height:100vh;overflow-x:hidden}
+header{position:sticky;top:0;z-index:200;height:58px;padding:0 28px;display:flex;align-items:center;gap:18px;background:rgba(8,8,9,.96);border-bottom:1px solid var(--border);backdrop-filter:blur(12px)}
+.logo{font-family:var(--ff);font-size:30px;letter-spacing:3px;color:var(--amber);line-height:1;flex-shrink:0}
+.logo b{color:var(--text)}
+.tagline{font-family:var(--fm);font-size:9px;color:var(--muted);text-transform:uppercase;letter-spacing:.1em;border-left:1px solid var(--border2);padding-left:16px;white-space:nowrap}
+.hdr-right{margin-left:auto;display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.badge{font-family:var(--fm);font-size:9px;padding:3px 8px;border-radius:3px;border:1px solid var(--border2);color:var(--muted);text-transform:uppercase;letter-spacing:.06em;transition:all .4s}
+.badge.ok{border-color:var(--green);color:var(--green)}
+.badge.warn{border-color:var(--amber);color:var(--amber)}
+.badge.live{border-color:var(--green);color:var(--green)}
+.settings-bar{background:var(--panel);border-bottom:1px solid var(--border);padding:10px 28px;display:flex;align-items:center;gap:20px;flex-wrap:wrap}
+.sg{display:flex;align-items:center;gap:8px}
+.slabel{font-family:var(--fm);font-size:9px;color:var(--muted);text-transform:uppercase;letter-spacing:.1em;white-space:nowrap}
+select{background:var(--card);border:1px solid var(--border2);color:var(--text);font-family:var(--fm);font-size:11px;padding:5px 10px;border-radius:4px;cursor:pointer;outline:none;transition:border-color .15s}
+select:hover,select:focus{border-color:var(--amber)}
+select option{background:var(--card)}
+.tog{padding:4px 10px;font-family:var(--fm);font-size:9px;border-radius:3px;border:1px solid var(--border2);background:var(--card);color:var(--muted);cursor:pointer;transition:all .15s;text-transform:uppercase;letter-spacing:.05em}
+.tog.on{background:var(--amber-d);border-color:var(--amber);color:var(--amber)}
+.divider{width:1px;height:20px;background:var(--border2)}
+main{max-width:1400px;margin:0 auto;padding:28px}
+.upload-zone{border:2px dashed var(--border2);border-radius:10px;padding:56px 28px;text-align:center;cursor:pointer;background:var(--panel);position:relative;overflow:hidden;margin-bottom:32px;transition:all .2s}
+.upload-zone::before{content:'';position:absolute;inset:0;pointer-events:none;background:radial-gradient(ellipse at 50% -10%,rgba(224,154,42,.07) 0%,transparent 60%)}
+.upload-zone.drag-over{border-color:var(--amber);background:rgba(224,154,42,.04)}
+.up-icon{font-size:52px;margin-bottom:14px;display:block;line-height:1}
+.up-title{font-family:var(--ff);font-size:30px;letter-spacing:3px;color:var(--text);margin-bottom:6px}
+.up-sub{font-family:var(--fm);font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.12em;margin-bottom:24px}
+.up-formats{display:flex;gap:8px;justify-content:center;flex-wrap:wrap;margin-bottom:20px}
+.fmt-chip{padding:3px 10px;border:1px solid var(--border2);border-radius:20px;font-family:var(--fm);font-size:9px;color:var(--sub);text-transform:uppercase}
+.up-btn{display:inline-flex;align-items:center;gap:8px;padding:11px 28px;background:var(--amber);color:#000;font-family:var(--ff);font-size:17px;letter-spacing:2px;border-radius:5px;border:none;cursor:pointer;transition:opacity .15s}
+.up-btn:hover{opacity:.85}
+#fileInput{display:none}
+.proc-bar{display:none;margin-top:24px}
+.proc-bar.active{display:block}
+.proc-text{font-family:var(--fm);font-size:10px;color:var(--amber);text-transform:uppercase;letter-spacing:.1em;margin-bottom:8px}
+.prog-track{width:100%;max-width:320px;height:2px;background:var(--border);margin:0 auto;border-radius:1px;overflow:hidden}
+.prog-fill{height:100%;background:var(--amber);width:0%;transition:width .25s;border-radius:1px}
+.sh{font-family:var(--fm);font-size:9px;color:var(--muted);text-transform:uppercase;letter-spacing:.14em;margin-bottom:16px;display:flex;align-items:center;gap:10px}
+.sh::after{content:'';flex:1;height:1px;background:var(--border)}
+.sh em{color:var(--text);font-style:normal}
+#gallery{display:none;margin-bottom:32px}
+.photo-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:14px}
+.photo-card{background:var(--card);border:1px solid var(--border);border-radius:7px;overflow:hidden;animation:cardIn .3s ease both;transition:border-color .15s}
+.photo-card:hover{border-color:var(--border2)}
+@keyframes cardIn{from{opacity:0;transform:translateY(10px) scale(.98)}to{opacity:1;transform:translateY(0) scale(1)}}
+.card-imgs{display:grid;grid-template-columns:1fr 1fr}
+.cimg-wrap{position:relative;background:#000;overflow:hidden;aspect-ratio:35/45}
+.cimg-wrap img{width:100%;height:100%;object-fit:cover;display:block}
+.cimg-label{position:absolute;bottom:4px;left:4px;font-family:var(--fm);font-size:7px;text-transform:uppercase;letter-spacing:.04em;padding:2px 5px;border-radius:2px;background:rgba(0,0,0,.75);color:var(--muted)}
+.cimg-label.enh{color:var(--amber)}
+.card-foot{padding:9px 12px;display:flex;align-items:center;gap:5px;border-top:1px solid var(--border);flex-wrap:wrap}
+.card-name{flex:1;font-family:var(--fm);font-size:9px;color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0}
+.tag{font-family:var(--fm);font-size:7px;text-transform:uppercase;letter-spacing:.04em;padding:2px 5px;border-radius:2px;border:1px solid transparent;flex-shrink:0}
+.tag.face{border-color:var(--green);color:var(--green)}
+.tag.fallback{border-color:var(--amber);color:var(--amber)}
+.tag.bg{border-color:var(--blue);color:var(--blue)}
+.card-del{background:none;border:none;color:var(--sub);cursor:pointer;font-size:12px;padding:2px 4px;border-radius:3px;transition:color .15s;line-height:1;flex-shrink:0}
+.card-del:hover{color:var(--red)}
+#previewSection{display:none;margin-bottom:32px}
+.preview-outer{background:var(--panel);border:1px solid var(--border);border-radius:8px;padding:20px;overflow:auto}
+.a4-paper{background:#fff;width:595px;margin:0 auto;padding:19px;display:flex;flex-wrap:wrap;gap:7px;align-content:flex-start;box-shadow:0 4px 40px rgba(0,0,0,.6),0 0 0 1px rgba(255,255,255,.05);min-height:842px}
+.pv-photo{display:block;object-fit:cover;flex-shrink:0}
+.preview-hint{font-family:var(--fm);font-size:9px;color:var(--muted);text-align:center;margin-top:10px;text-transform:uppercase;letter-spacing:.08em}
+#actionBar{display:none;align-items:center;gap:12px;padding:20px 0;border-top:1px solid var(--border);flex-wrap:wrap}
+.btn{padding:11px 22px;font-family:var(--ff);font-size:17px;letter-spacing:2px;border-radius:5px;border:none;cursor:pointer;transition:all .15s;display:flex;align-items:center;gap:8px}
+.btn-ghost{background:var(--card);border:1px solid var(--border2);color:var(--muted)}
+.btn-ghost:hover{color:var(--text)}
+.btn-zip{background:var(--card);border:1px solid var(--border2);color:var(--text)}
+.btn-zip:hover{border-color:var(--green);color:var(--green)}
+.btn-print{background:var(--red);color:#fff;box-shadow:0 0 20px rgba(214,48,49,.25)}
+.btn-print:hover{opacity:.9}
+.info-pill{margin-left:auto;font-family:var(--fm);font-size:9px;color:var(--muted);text-transform:uppercase;letter-spacing:.08em;padding:5px 12px;border:1px solid var(--border);border-radius:20px}
+#printSheet{display:none}
+@media print{
+  body>*:not(#printSheet){display:none!important}
+  #printSheet{display:block!important}
+  .print-page{width:210mm;min-height:297mm;padding:5mm;display:flex;flex-wrap:wrap;align-content:flex-start;background:#fff;page-break-after:always}
+  .print-photo{display:block;object-fit:cover;flex-shrink:0}
+  @page{size:A4;margin:0}
+  *{-webkit-print-color-adjust:exact;print-color-adjust:exact}
+}
+#toast{position:fixed;bottom:24px;right:24px;z-index:9998;background:var(--card);border:1px solid var(--border2);border-radius:6px;padding:10px 18px;font-family:var(--fm);font-size:10px;color:var(--text);text-transform:uppercase;letter-spacing:.06em;transform:translateY(16px);opacity:0;transition:all .22s;pointer-events:none}
+#toast.show{transform:translateY(0);opacity:1}
+#toast.success{border-color:var(--green);color:var(--green)}
+#toast.error{border-color:var(--red);color:var(--red)}
+#toast.info{border-color:var(--amber);color:var(--amber)}
+::-webkit-scrollbar{width:5px;height:5px}
+::-webkit-scrollbar-track{background:var(--bg)}
+::-webkit-scrollbar-thumb{background:var(--border2);border-radius:3px}
+::-webkit-scrollbar-thumb:hover{background:var(--muted)}
+@media(max-width:600px){header{padding:0 16px}.tagline{display:none}.settings-bar{padding:10px 16px}main{padding:16px}.upload-zone{padding:36px 16px}}
 </style>
 </head>
 <body>
+<input type="file" id="fileInput" multiple accept=".jpg,.jpeg,.png,.pdf,.webp">
 
 <header>
-  <div class="logo">NEURALVISAGE<span> · face enhancer</span></div>
-  <div class="badge-group">
-    <span class="badge" id="faceStatus">⚡ FACE AI</span>
-    <span class="badge" id="bgStatus">✂️ BG READY</span>
+  <div class="logo">STUDIO<b>SNAP</b></div>
+  <div class="tagline">AUTO FACE ENHANCER · ORANGE SKIN SMOOTH · PASSPORT AI</div>
+  <div class="hdr-right">
+    <span class="badge live">● OFFLINE READY</span>
+    <span class="badge ok" id="badgeFace">✓ FACE AI</span>
+    <span class="badge ok" id="badgeBg">✓ BG REMOVE</span>
   </div>
 </header>
 
-<div class="toolbar">
-  <div class="tog-group"><span style="font-size:10px; color:var(--muted);">✨ AUTO FACE ENHANCER</span>
-    <button class="tog feature on" id="autoFaceEnhancerBtn">SKIN TONE + COLOR + HDR + SMOOTH HD</button>
+<div class="settings-bar">
+  <div class="sg"><span class="slabel">Preset</span><select id="presetSel"></select></div>
+  <div class="divider"></div>
+  <div class="sg">
+    <span class="slabel">✨ AUTO FACE ENHANCER</span>
+    <button class="tog on" data-key="orangeSmooth" style="background:var(--amber-d);border-color:var(--amber);color:var(--amber)">🍊 SMOOTH + ORANGE SKIN</button>
   </div>
   <div class="divider"></div>
-  <div class="tog-group">
-    <button class="tog on" id="removeOtherEnhBtn">🗑️ REMOVE OTHER ENHANCING</button>
+  <div class="sg">
+    <span class="slabel">AI</span>
+    <button class="tog on" data-key="faceAlign">Face Align</button>
+    <button class="tog on" data-key="removeBg">Remove BG</button>
   </div>
   <div class="divider"></div>
-  <select id="presetSelect" style="width:160px;"></select>
-  <select id="bgColorSelect"><option value="#ffffff">White BG</option><option value="#f0f0f0">Light Gray</option><option value="#e6f0fa">Soft Blue</option></select>
-  <select id="dpiSelect"><option value="300">300 DPI (Print)</option><option value="150">150 DPI</option></select>
-  <div class="tog-group"><span style="font-size:10px;">📄 Copies</span><input type="number" id="copiesVal" value="6" min="1" max="99" style="width:65px; background:var(--card); border:1px solid var(--border); border-radius:40px; text-align:center;"></div>
+  <div class="sg"><span class="slabel">Layout</span>
+    <select id="colsSel">
+      <option value="2">2 / row</option><option value="3">3 / row</option>
+      <option value="4" selected>4 / row</option><option value="5">5 / row</option><option value="6">6 / row</option>
+    </select>
+  </div>
+  <div class="sg"><span class="slabel">Quality</span>
+    <select id="dpiSel">
+      <option value="300" selected>300 DPI (Print)</option>
+      <option value="150">150 DPI (Draft)</option>
+    </select>
+  </div>
+  <div class="sg"><span class="slabel">BG Color</span>
+    <select id="bgSel">
+      <option value="#ffffff">White</option>
+      <option value="#f5f0e8">Cream</option>
+      <option value="#d6e4f7">Light Blue</option>
+      <option value="#d4f0d4">Light Green</option>
+      <option value="#f0e6d3">Warm Beige</option>
+    </select>
+  </div>
+  <div class="divider"></div>
+  <div class="sg">
+    <span class="slabel">🖨 Copies</span>
+    <input type="number" id="copiesInput" min="1" max="200" value="6"
+      style="width:66px;background:var(--card);border:1px solid var(--amber);color:var(--amber);font-family:var(--fm);font-size:13px;font-weight:700;padding:5px 8px;border-radius:4px;outline:none;text-align:center;cursor:pointer">
+    <span class="slabel">per photo</span>
+  </div>
 </div>
 
 <main>
   <div class="upload-zone" id="uploadZone">
-    <div class="up-icon">📸</div>
-    <div class="up-title">Drop photos or click to upload</div>
-    <div class="up-sub" style="font-size:12px; color:var(--muted); margin:6px 0;">JPG · PNG · WEBP · PDF (single page)</div>
-    <button class="up-btn" onclick="document.getElementById('fileInput').click()">SELECT IMAGES</button>
-    <div id="procIndicator" style="margin-top:20px; display:none;"><div style="height:3px; background:var(--border); width:200px; margin:0 auto;"><div id="progressFill" style="width:0%; height:3px; background:var(--amber); transition:0.2s;"></div></div><div id="procMsg" style="font-size:10px; margin-top:8px;"></div></div>
-  </div>
-  <input type="file" id="fileInput" multiple accept="image/jpeg,image/png,image/webp,application/pdf" style="display:none">
-
-  <div id="gallerySection" style="display:none;">
-    <div style="display:flex; justify-content:space-between; margin:20px 0 12px;"><h3 style="font-weight:600;">✨ ENHANCED PORTRAITS</h3><span id="photoCount"></span></div>
-    <div class="photo-grid" id="photoGrid"></div>
-  </div>
-
-  <div id="previewArea" style="display:none; margin-top:32px;">
-    <div style="background:var(--panel); border-radius:24px; padding:20px;">
-      <div class="a4-preview" id="a4PreviewContainer"></div>
-      <div style="text-align:center; margin-top:12px; font-size:10px; color:var(--muted);">📄 A4 print layout preview (scale accurate)</div>
+    <span class="up-icon">🍊</span>
+    <div class="up-title">AUTO FACE ENHANCER</div>
+    <div class="up-sub">Smooth + Orange Glow · Professional Passport Studio</div>
+    <div class="up-formats">
+      <span class="fmt-chip">JPG</span><span class="fmt-chip">PNG</span>
+      <span class="fmt-chip">WEBP</span><span class="fmt-chip">PDF</span><span class="fmt-chip">Bulk</span>
+    </div>
+    <button class="up-btn" onclick="document.getElementById('fileInput').click()">📁 SELECT FILES</button>
+    <div class="proc-bar" id="procBar">
+      <div class="proc-text" id="procText">PROCESSING...</div>
+      <div class="prog-track"><div class="prog-fill" id="progFill"></div></div>
     </div>
   </div>
 
-  <div id="actionPanel" style="display:none; gap:16px; justify-content:center; margin-top:28px; flex-wrap:wrap;">
-    <button class="btn" id="clearBtn">🗑️ CLEAR ALL</button>
-    <button class="btn" id="zipBtn">📦 ZIP DOWNLOAD</button>
-    <button class="btn btn-primary" id="printBtn">🖨️ PRINT PASSPORT SHEET</button>
+  <div id="gallery">
+    <div class="sh">ENHANCED PORTRAITS · ORANGE SKIN SMOOTH &nbsp;<em id="galleryCount">0</em></div>
+    <div class="photo-grid" id="photoGrid"></div>
+  </div>
+
+  <div id="previewSection">
+    <div class="sh">A4 PRINT PREVIEW — <em id="pvInfo"></em></div>
+    <div class="preview-outer">
+      <div class="a4-paper" id="a4Paper"></div>
+      <div class="preview-hint">↑ Warm orange skin enhancement active · ready to print</div>
+    </div>
+  </div>
+
+  <div id="actionBar">
+    <button class="btn btn-ghost" onclick="clearAll()">✕ CLEAR ALL</button>
+    <button class="btn btn-zip" onclick="downloadZIP()">⬇ ZIP</button>
+    <button class="btn btn-print" onclick="doPrint()">🖨 PRINT</button>
+    <span class="info-pill" id="infoPill"></span>
   </div>
 </main>
+
 <div id="printSheet"></div>
 <div id="toast"></div>
 
 <script>
+// PDF.js worker
 pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
 
-// ---------- AI MODELS ----------
+// CANVAS helper
+function get2d(canvas, willReadFrequently = false) {
+  return canvas.getContext('2d', { willReadFrequently });
+}
+
+// AI MODELS
 let blazeModel = null;
 let segmenter = null;
-async function initModels() {
-  try { await tf.setBackend('wasm'); await tf.ready(); } catch(e) { await tf.setBackend('cpu'); }
-  try { blazeModel = await blazeface.load(); document.getElementById('faceStatus').innerHTML = '✅ FACE AI'; document.getElementById('faceStatus').className = 'badge ok'; } catch(e){ document.getElementById('faceStatus').innerHTML = '⚠️ SMART CROP'; }
-  try { const model = bodySegmentation.SupportedModels.MediaPipeSelfieSegmentation; segmenter = await bodySegmentation.createSegmenter(model, { runtime: 'tfjs', modelType: 'general' }); document.getElementById('bgStatus').innerHTML = '✅ BG READY'; document.getElementById('bgStatus').className = 'badge ok'; } catch(e){ document.getElementById('bgStatus').innerHTML = '⚠️ BG FALLBACK'; }
-}
-initModels();
 
-// ---------- PRESETS ----------
-const PRESETS = { nepal:{w:35,h:45,label:'🇳🇵 Nepal 35x45'}, india:{w:35,h:45,label:'🇮🇳 India 35x45'}, usa:{w:51,h:51,label:'🇺🇸 USA 2x2in'}, uk:{w:35,h:45,label:'🇬🇧 UK 35x45'}, schengen:{w:35,h:45,label:'🇪🇺 Schengen'}, canada:{w:50,h:70,label:'🇨🇦 Canada 50x70'}, japan:{w:35,h:45,label:'🇯🇵 Japan'}, custom:{w:50,h:50,label:'✏️ Custom 50x50'} };
-const presetSelect = document.getElementById('presetSelect');
-for (const [k,v] of Object.entries(PRESETS)) { let opt = document.createElement('option'); opt.value=k; opt.innerText=v.label; presetSelect.appendChild(opt); } presetSelect.value='nepal';
-
-// STATE
-let photos = [];  // { id, name, sourceDataURL, processedURL, faceDetected, bgRemoved }
-let processing = false;
-const S = { autoFaceEnhancer: true, removeOtherEnhancing: true, preset:'nepal', dpi:300, bgColor:'#ffffff', copies:6 };
-// toggles
-const autoFaceBtn = document.getElementById('autoFaceEnhancerBtn');
-const removeOtherBtn = document.getElementById('removeOtherEnhBtn');
-autoFaceBtn.addEventListener('click', () => { S.autoFaceEnhancer = !S.autoFaceEnhancer; autoFaceBtn.classList.toggle('on', S.autoFaceEnhancer); reprocessAll(); });
-removeOtherBtn.addEventListener('click', () => { S.removeOtherEnhancing = !S.removeOtherEnhancing; removeOtherBtn.classList.toggle('on', S.removeOtherEnhancing); reprocessAll(); });
-presetSelect.addEventListener('change', (e) => { S.preset = e.target.value; reprocessAll(); });
-document.getElementById('bgColorSelect').addEventListener('change', e => { S.bgColor = e.target.value; reprocessAll(); });
-document.getElementById('dpiSelect').addEventListener('change', e => { S.dpi = parseInt(e.target.value); reprocessAll(); });
-document.getElementById('copiesVal').addEventListener('input', (e) => { S.copies = Math.max(1, parseInt(e.target.value)||6); buildPrintPreview(); buildPrintSheets(); });
-
-// helpers
-function canvasToDataURL(canvas, quality=0.92) { return canvas.toDataURL('image/jpeg', quality); }
-function loadImageCanvas(file) { return new Promise((res,rej)=>{ let img=new Image(), url=URL.createObjectURL(file); img.onload=()=>{ let c=document.createElement('canvas'); c.width=img.width; c.height=img.height; c.getContext('2d').drawImage(img,0,0); URL.revokeObjectURL(url); res(c); }; img.onerror=rej; img.src=url; }); }
-async function renderPDF(file) { let ab=await file.arrayBuffer(); let pdf=await pdfjsLib.getDocument({data:ab}).promise; let page=await pdf.getPage(1); let viewport=page.getViewport({scale:2.2}); let c=document.createElement('canvas'); c.width=viewport.width; c.height=viewport.height; await page.render({canvasContext:c.getContext('2d'),viewport}).promise; return c; }
-function dataURLtoCanvas(url) { return new Promise(res=>{ let img=new Image(); img.onload=()=>{ let c=document.createElement('canvas'); c.width=img.width; c.height=img.height; c.getContext('2d').drawImage(img,0,0); res(c); }; img.src=url; }); }
-
-// ---------- PROFESSIONAL BACKGROUND REMOVAL (AI) ----------
-async function removeBackgroundWithAI(srcCanvas) {
-  if (!segmenter || !S.autoFaceEnhancer) return srcCanvas;
+async function loadBlazeFace() {
   try {
-    let small = document.createElement('canvas'); let ratio = Math.min(640/srcCanvas.width, 640/srcCanvas.height); small.width = Math.floor(srcCanvas.width*ratio); small.height = Math.floor(srcCanvas.height*ratio);
-    small.getContext('2d').drawImage(srcCanvas, 0, 0, small.width, small.height);
-    const seg = await segmenter.segmentPeople(small, { flattenMasks: false });
-    if (!seg || seg.length===0) return srcCanvas;
-    let mask = seg[0].mask; let maskData = await mask.toImageData(); let w = maskData.width, h = maskData.height;
-    let outputCanvas = document.createElement('canvas'); outputCanvas.width = srcCanvas.width; outputCanvas.height = srcCanvas.height;
-    let ctxOut = outputCanvas.getContext('2d'); ctxOut.drawImage(srcCanvas, 0, 0);
-    let imgData = ctxOut.getImageData(0,0,srcCanvas.width,srcCanvas.height);
-    let bgRGB = { r:255,g:255,b:255 }; if(S.bgColor !== '#ffffff'){ let rgb = parseInt(S.bgColor.slice(1),16); bgRGB.r = (rgb>>16)&255; bgRGB.g = (rgb>>8)&255; bgRGB.b = rgb&255; }
-    for (let y=0; y<h; y++) { for (let x=0; x<w; x++) { let maskVal = maskData.data[(y*w+x)*4] / 255; if (maskVal < 0.4) { let sx = Math.floor(x/ratio), sy = Math.floor(y/ratio); let idx = (sy*srcCanvas.width + sx)*4; imgData.data[idx] = bgRGB.r; imgData.data[idx+1] = bgRGB.g; imgData.data[idx+2] = bgRGB.b; } } }
-    ctxOut.putImageData(imgData,0,0); return outputCanvas;
-  } catch(e) { console.warn(e); return srcCanvas; }
+    await tf.setBackend('wasm');
+    await tf.ready();
+    blazeModel = await blazeface.load();
+    document.getElementById('badgeFace').textContent = '✓ FACE AI';
+    document.getElementById('badgeFace').className = 'badge ok';
+  } catch(e) {
+    document.getElementById('badgeFace').textContent = '⚠ SMART CROP';
+    document.getElementById('badgeFace').className = 'badge warn';
+    console.warn('BlazeFace fallback');
+  }
 }
 
-// ---------- ADVANCED FACE ENHANCER: SKIN TONE · COLOR · HDR · SMOOTH HD ----------
-async function detectFaceRegion(canvas) {
-  if (!blazeModel) return null;
-  try { let faces = await blazeModel.estimateFaces(canvas, false); if(faces.length) return faces[0]; } catch(e) {}
-  return null;
-}
-// Skin tone normalization (selective color balance based on face skin)
-function applySkinToneAndColor(canvas, faceBox) {
-  let ctx = canvas.getContext('2d', { willReadFrequently: true });
-  let w = canvas.width, h = canvas.height; let img = ctx.getImageData(0,0,w,h); let data = img.data;
-  // Face region average for skin tone
-  let skinR=0, skinG=0, skinB=0, skinPixels=0;
-  if (faceBox && faceBox.topLeft && faceBox.bottomRight) {
-    let [x1,y1] = faceBox.topLeft, [x2,y2] = faceBox.bottomRight; x1 = Math.max(0,Math.floor(x1)); y1 = Math.max(0,Math.floor(y1)); x2 = Math.min(w,Math.ceil(x2)); y2 = Math.min(h,Math.ceil(y2));
-    for (let y=y1; y<y2; y++) { for (let x=x1; x<x2; x++) { let idx = (y*w+x)*4; let r=data[idx],g=data[idx+1],b=data[idx+2]; if(r>50 && g>30 && b>20 && Math.abs(r-g)<60) { skinR+=r; skinG+=g; skinB+=b; skinPixels++; } } }
+async function loadSegmentation() {
+  try {
+    const model = bodySegmentation.SupportedModels.MediaPipeSelfieSegmentation;
+    const config = { runtime: 'tfjs', modelType: 'general' };
+    segmenter = await bodySegmentation.createSegmenter(model, config);
+    document.getElementById('badgeBg').textContent = '✓ BG REMOVE';
+    document.getElementById('badgeBg').className = 'badge ok';
+  } catch(e) {
+    document.getElementById('badgeBg').textContent = '⚠ BG FILL';
+    document.getElementById('badgeBg').className = 'badge warn';
+    console.warn('Segmentation fallback');
   }
-  if (skinPixels > 0) { skinR /= skinPixels; skinG /= skinPixels; skinB /= skinPixels; }
-  let targetR=215, targetG=165, targetB=135; // warm balanced skin tone
-  let adjustR = (skinPixels>0) ? targetR/skinR : 1.05; let adjustG = (skinPixels>0) ? targetG/skinG : 1.02; let adjustB = (skinPixels>0) ? targetB/skinB : 0.98;
-  for (let i=0; i<data.length; i+=4) {
-    let r=data[i], g=data[i+1], b=data[i+2];
-    let yVal = 0.299*r + 0.587*g + 0.114*b;
-    let isSkinPixel = (r>70 && g>40 && b>30 && Math.abs(r-g)<75 && r>g*0.6);
-    if (isSkinPixel || skinPixels>0) {
-      data[i] = Math.min(245, Math.max(70, r * adjustR));
-      data[i+1] = Math.min(235, Math.max(60, g * adjustG));
-      data[i+2] = Math.min(220, Math.max(50, b * adjustB));
+}
+
+loadBlazeFace();
+loadSegmentation();
+
+// PRESETS (unchanged)
+const PRESETS = {
+  nepal:      { w:35, h:45, label:'🇳🇵 Nepal (35×45mm)' },
+  india:      { w:35, h:45, label:'🇮🇳 India (35×45mm)' },
+  usa:        { w:51, h:51, label:'🇺🇸 USA (2×2 inch)' },
+  uk:         { w:35, h:45, label:'🇬🇧 UK (35×45mm)' },
+  schengen:   { w:35, h:45, label:'🇪🇺 Schengen (35×45mm)' },
+  canada:     { w:50, h:70, label:'🇨🇦 Canada (50×70mm)' },
+  china:      { w:33, h:48, label:'🇨🇳 China (33×48mm)' },
+  australia:  { w:35, h:45, label:'🇦🇺 Australia (35×45mm)' },
+  uae:        { w:40, h:60, label:'🇦🇪 UAE (40×60mm)' },
+  japan:      { w:35, h:45, label:'🇯🇵 Japan (35×45mm)' },
+  singapore:  { w:35, h:45, label:'🇸🇬 Singapore (35×45mm)' },
+  korea:      { w:35, h:45, label:'🇰🇷 S. Korea (35×45mm)' },
+  southafrica:{ w:35, h:45, label:'🇿🇦 South Africa (35×45mm)' },
+  custom:     { w:50, h:50, label:'✏️ Custom 50×50mm' },
+};
+
+let photos = [];
+const S = {
+  preset:'nepal', orangeSmooth: true, faceAlign: true, removeBg: true,
+  cols:4, dpi:300, bg:'#ffffff',
+};
+
+// DOM elements
+const uploadZone    = document.getElementById('uploadZone');
+const fileInput     = document.getElementById('fileInput');
+const photoGrid     = document.getElementById('photoGrid');
+const gallery       = document.getElementById('gallery');
+const previewSection= document.getElementById('previewSection');
+const actionBar     = document.getElementById('actionBar');
+const a4Paper       = document.getElementById('a4Paper');
+const printSheet    = document.getElementById('printSheet');
+const procBar       = document.getElementById('procBar');
+const procText      = document.getElementById('procText');
+const progFill      = document.getElementById('progFill');
+
+// Controls init
+const presetSel = document.getElementById('presetSel');
+for(const [k,p] of Object.entries(PRESETS)){
+  const o = document.createElement('option');
+  o.value = k; o.textContent = p.label;
+  presetSel.appendChild(o);
+}
+presetSel.value = 'nepal';
+presetSel.addEventListener('change', () => { S.preset = presetSel.value; reprocessAll(); });
+document.getElementById('colsSel').addEventListener('change', e => { S.cols=+e.target.value; buildPrintPreview(); buildPrintSheet(); });
+document.getElementById('dpiSel').addEventListener('change', e => { S.dpi=+e.target.value; reprocessAll(); });
+document.getElementById('bgSel').addEventListener('change', e => { S.bg=e.target.value; reprocessAll(); });
+document.getElementById('copiesInput').addEventListener('input', () => { buildPrintPreview(); buildPrintSheet(); });
+document.querySelectorAll('.tog').forEach(btn => {
+  btn.addEventListener('click', () => {
+    const k=btn.dataset.key;
+    if (k === 'orangeSmooth' || k === 'faceAlign' || k === 'removeBg') {
+      S[k] = !S[k];
+      btn.classList.toggle('on', S[k]);
+      reprocessAll();
     }
-    // Color vibrance globally
-    let avg = (data[i]+data[i+1]+data[i+2])/3;
-    let satBoost = 1.18;
-    data[i] = Math.min(255, data[i] + (data[i]-avg)*0.22);
-    data[i+1] = Math.min(255, data[i+1] + (data[i+1]-avg)*0.18);
-    data[i+2] = Math.min(255, data[i+2] + (data[i+2]-avg)*0.20);
-  }
-  ctx.putImageData(img,0,0);
-  return canvas;
-}
-// HDR effect: local contrast + shadow/highlight + clarity
-function applyHDRClarity(canvas) {
-  let ctx = canvas.getContext('2d'); let w=canvas.width, h=canvas.height; let imgData = ctx.getImageData(0,0,w,h); let data = imgData.data;
-  let lum = new Float32Array(w*h);
-  for (let i=0; i<data.length; i+=4) lum[i/4] = 0.299*data[i] + 0.587*data[i+1] + 0.114*data[i+2];
-  let contrastMap = new Float32Array(w*h);
-  let radius = 3; let rad = radius;
-  for (let y=0; y<h; y++) { for (let x=0; x<w; x++) { let idx = y*w+x; let localSum=0, cnt=0; for (let dy=-rad; dy<=rad; dy++) { for (let dx=-rad; dx<=rad; dx++) { let nx=x+dx, ny=y+dy; if(nx>=0 && nx<w && ny>=0 && ny<h) { localSum += lum[ny*w+nx]; cnt++; } } } let localAvg = localSum/cnt; let diff = lum[idx] - localAvg; contrastMap[idx] = diff * 1.6; } }
-  for (let i=0; i<data.length; i+=4) {
-    let idx = i/4; let newLum = lum[idx] + contrastMap[idx]; newLum = Math.min(245, Math.max(20, newLum));
-    let factor = newLum / (lum[idx]+0.001);
-    data[i] = Math.min(255, data[i] * factor * 1.02);
-    data[i+1] = Math.min(255, data[i+1] * factor * 1.01);
-    data[i+2] = Math.min(255, data[i+2] * factor);
-  }
-  ctx.putImageData(imgData,0,0);
-  return canvas;
-}
-// Smooth HD: Bilateral-like edge-aware smoothing + crisp sharpness
-function applySmoothHD(canvas) {
-  let ctx = canvas.getContext('2d'); let w=canvas.width, h=canvas.height; let img = ctx.getImageData(0,0,w,h); let data = img.data; let temp = new Uint8ClampedArray(data);
-  for (let y=2; y<h-2; y++) { for (let x=2; x<w-2; x++) { let idx = (y*w+x)*4; let isEdge = false; for (let c=0;c<3;c++) { let grad = Math.abs(data[idx+c] - data[idx-4+c]) + Math.abs(data[idx+c] - data[idx-w*4+c]); if(grad>35) { isEdge=true; break; } }
-    if(!isEdge) { let r=0,g=0,b=0,count=0; for (let dy=-1; dy<=1; dy++) { for (let dx=-1; dx<=1; dx++) { let nidx = ((y+dy)*w+(x+dx))*4; r+=data[nidx]; g+=data[nidx+1]; b+=data[nidx+2]; count++; } } temp[idx] = (data[idx]*0.6) + (r/count)*0.4; temp[idx+1] = (data[idx+1]*0.6)+(g/count)*0.4; temp[idx+2] = (data[idx+2]*0.6)+(b/count)*0.4; } else { temp[idx]=data[idx]; temp[idx+1]=data[idx+1]; temp[idx+2]=data[idx+2]; } } }
-  for (let i=0; i<data.length; i++) data[i] = temp[i];
-  ctx.putImageData(img,0,0);
-  // Unsharp mask for HD crispness
-  let sharpImg = ctx.getImageData(0,0,w,h); let sharpData = sharpImg.data; let blur = new Uint8ClampedArray(sharpData.length);
-  for (let y=1; y<h-1; y++) for (let x=1; x<w-1; x++) { let idx = (y*w+x)*4; for (let c=0;c<3;c++) blur[idx+c] = (sharpData[idx-4+c]+sharpData[idx+4+c]+sharpData[idx-w*4+c]+sharpData[idx+w*4+c])/4; }
-  for (let i=0; i<sharpData.length; i+=4) { for (let c=0;c<3;c++) { let val = sharpData[i+c] + 0.85 * (sharpData[i+c] - blur[i+c]); sharpData[i+c] = Math.min(255, Math.max(0, val)); } }
-  ctx.putImageData(sharpImg,0,0);
-  return canvas;
-}
-
-// MAIN ENHANCE PIPELINE (auto face enhancer + optional remove other)
-async function fullFaceEnhancePipeline(croppedCanvas, originalCanvasForFace) {
-  let canvas = croppedCanvas; // already cropped passport
-  let face = await detectFaceRegion(canvas);
-  if (S.autoFaceEnhancer) {
-    // 1) Skin tone + color vibrancy
-    canvas = applySkinToneAndColor(canvas, face);
-    // 2) HDR / local contrast
-    canvas = applyHDRClarity(canvas);
-    // 3) Smooth HD (skin smoothing + crisp)
-    canvas = applySmoothHD(canvas);
-  }
-  // If removeOtherEnhancing is OFF, we skip additional legacy enhancements; otherwise we respect user
-  if (!S.removeOtherEnhancing) {
-    // optional legacy enhancements off (nothing added)
-  }
-  return canvas;
-}
-
-// CROP to passport + BG removal + ENHANCE
-async function processSingleImage(srcCanvas) {
-  let withBgRemoved = srcCanvas;
-  if (S.autoFaceEnhancer && segmenter) { try { withBgRemoved = await removeBackgroundWithAI(srcCanvas); } catch(e){} }
-  let faceDetectedFlag = false;
-  let detection = await detectFaceRegion(withBgRemoved);
-  faceDetectedFlag = !!detection;
-  let preset = PRESETS[S.preset];
-  let mmToPx = (mm) => Math.round(mm / 25.4 * S.dpi);
-  let targetW = mmToPx(preset.w), targetH = mmToPx(preset.h);
-  let cropCanvas = document.createElement('canvas'); cropCanvas.width = targetW; cropCanvas.height = targetH;
-  let ctx = cropCanvas.getContext('2d'); ctx.fillStyle = S.bgColor; ctx.fillRect(0,0,targetW,targetH);
-  if (detection) {
-    let [x1,y1] = detection.topLeft, [x2,y2] = detection.bottomRight;
-    let faceH = y2-y1; let crownY = y1 - faceH*0.35; let chinY = y2 + faceH*0.05;
-    let headH = chinY - crownY; let targetHeadH = targetH * 0.72;
-    let scale = targetHeadH / headH; let srcPhotoW = targetW / scale, srcPhotoH = targetH / scale;
-    let srcX = Math.max(0, Math.min(withBgRemoved.width - srcPhotoW, (x1+x2)/2 - srcPhotoW/2));
-    let srcY = crownY - (targetH*0.08/scale);
-    ctx.drawImage(withBgRemoved, srcX, srcY, srcPhotoW, srcPhotoH, 0, 0, targetW, targetH);
-  } else {
-    let sw = withBgRemoved.width, sh = withBgRemoved.height; let ratio = Math.min(targetW/sw, targetH/sh);
-    let dw = sw*ratio, dh = sh*ratio; let dx = (targetW-dw)/2, dy = (targetH-dh)*0.12;
-    ctx.drawImage(withBgRemoved, dx, dy, dw, dh);
-  }
-  // FINAL ENHANCE
-  let finalCanvas = await fullFaceEnhancePipeline(cropCanvas, withBgRemoved);
-  return { finalCanvas, faceDetected: faceDetectedFlag, bgRemoved: !!segmenter && S.autoFaceEnhancer };
-}
-
-// ---------- FILE HANDLER ----------
-async function handleFiles(files) {
-  if (processing) return; processing = true;
-  let procDiv = document.getElementById('procIndicator'); procDiv.style.display = 'block'; let progFill = document.getElementById('progressFill'); let procMsg = document.getElementById('procMsg');
-  for (let i=0; i<files.length; i++) {
-    let f = files[i]; procMsg.innerText = `📸 ${f.name}`; progFill.style.width = `${(i/files.length)*80}%`;
-    try {
-      let srcCanvas = f.type === 'application/pdf' ? await renderPDF(f) : await loadImageCanvas(f);
-      let sourceDataURL = canvasToDataURL(srcCanvas, 0.9);
-      let { finalCanvas, faceDetected, bgRemoved } = await processSingleImage(srcCanvas);
-      let processedURL = canvasToDataURL(finalCanvas, 0.95);
-      photos.push({ id: Date.now()+Math.random(), name: f.name, sourceDataURL, processedURL, faceDetected, bgRemoved });
-    } catch(e) { console.warn(e); toast(`Error: ${f.name}`, 'error'); }
-  }
-  progFill.style.width = '100%'; procMsg.innerText = 'Ready!'; setTimeout(()=>{ procDiv.style.display='none'; }, 1000);
-  renderGallery(); showUI(); reprocessAll = reprocessAll; processing=false;
-}
-async function reprocessAll() {
-  if (!photos.length) return;
-  let newPhotos = [];
-  for (let p of photos) {
-    let srcCanvas = await dataURLtoCanvas(p.sourceDataURL);
-    let { finalCanvas, faceDetected, bgRemoved } = await processSingleImage(srcCanvas);
-    newPhotos.push({ ...p, processedURL: canvasToDataURL(finalCanvas,0.95), faceDetected, bgRemoved });
-  }
-  photos = newPhotos; renderGallery(); buildPrintPreview(); buildPrintSheets(); toast('Face enhancer reapplied ✓','success');
-}
-function renderGallery() {
-  let grid = document.getElementById('photoGrid'); grid.innerHTML = '';
-  photos.forEach(p => {
-    let card = document.createElement('div'); card.className = 'photo-card';
-    card.innerHTML = `<div class="card-imgs"><div class="cimg-wrap"><img src="${p.sourceDataURL}" alt="original"><span class="cimg-label">ORIGINAL</span></div><div class="cimg-wrap"><img src="${p.processedURL}" alt="enhanced"><span class="cimg-label" style="background:var(--amber);color:#000;">ENHANCED</span></div></div><div class="card-foot"><span class="tag face">${p.faceDetected?'🎯 FACE AI':'📐 AUTO'}</span>${p.bgRemoved?'<span class="tag" style="border-color:#3498db;">✂️ BG</span>':''}<span style="flex:1; font-size:10px; overflow:hidden;">${p.name}</span><button class="delPhotoBtn" data-id="${p.id}" style="background:none; border:none; color:var(--muted); cursor:pointer;">🗑️</button></div>`;
-    grid.appendChild(card);
   });
-  document.querySelectorAll('.delPhotoBtn').forEach(btn => btn.addEventListener('click', (e) => { let id = parseFloat(btn.dataset.id); photos = photos.filter(p=>p.id!==id); renderGallery(); if(!photos.length) hideUI(); else { buildPrintPreview(); buildPrintSheets(); } }));
-  document.getElementById('photoCount').innerText = `${photos.length} photo${photos.length!==1?'s':''}`;
+});
+
+// Drag & drop
+uploadZone.addEventListener('click', e => { if(!e.target.classList.contains('up-btn')) fileInput.click(); });
+uploadZone.addEventListener('dragover', e => { e.preventDefault(); uploadZone.classList.add('drag-over'); });
+uploadZone.addEventListener('dragleave', () => uploadZone.classList.remove('drag-over'));
+uploadZone.addEventListener('drop', e => { e.preventDefault(); uploadZone.classList.remove('drag-over'); handleFiles(Array.from(e.dataTransfer.files)); });
+fileInput.addEventListener('change', e => { handleFiles(Array.from(e.target.files)); fileInput.value=''; });
+
+// File handling
+async function handleFiles(files) {
+  const valid = files.filter(f => f.type.startsWith('image/') || f.type==='application/pdf');
+  if(!valid.length){ toast('No supported files','error'); return; }
+  setProcActive(true,0,`LOADING ${valid.length} FILE${valid.length>1?'S':''}...`);
+  for(let i=0;i<valid.length;i++){
+    const f=valid[i];
+    setProgress(i/valid.length*88, `${i+1}/${valid.length} · ${f.name}`);
+    try {
+      const src = f.type==='application/pdf' ? await renderPDF(f) : await loadImageCanvas(f);
+      const sourceURL = canvasToDataURL(src, 0.92);
+      const { originalURL, enhancedURL, faceDetected, bgRemoved } = await processPhoto(src);
+      const id = Date.now() + Math.random();
+      photos.push({ id, name:f.name, sourceURL, originalURL, enhancedURL, faceDetected, bgRemoved });
+      addCard(photos[photos.length-1]);
+    } catch(err) {
+      console.error(f.name, err);
+      toast('Error: '+f.name, 'error');
+    }
+  }
+  setProgress(100,'DONE!');
+  setTimeout(()=>setProcActive(false),500);
+  showUI(); buildPrintPreview(); buildPrintSheet();
+  toast(`${valid.length} photo${valid.length!==1?'s':''} ready ✓ | Auto Orange Skin Smooth Active`,'success');
 }
-function buildPrintPreview() {
-  let container = document.getElementById('a4PreviewContainer'); if(!photos.length) return; container.innerHTML='';
-  let preset = PRESETS[S.preset]; let pageW = 540, gap=6, cols=4; let photoW = Math.floor((pageW-(cols-1)*gap)/cols); let photoH = Math.round(photoW * preset.h/preset.w);
-  let copies = S.copies; let all = []; photos.forEach(p=>{ for(let i=0;i<copies;i++) all.push(p.processedURL); });
-  all.slice(0,36).forEach(url=>{ let img = document.createElement('img'); img.src=url; img.style.width=photoW+'px'; img.style.height=photoH+'px'; img.style.objectFit='cover'; img.style.borderRadius='4px'; container.appendChild(img); });
+
+function loadImageCanvas(file) {
+  return new Promise((res,rej) => {
+    const img=new Image(), url=URL.createObjectURL(file);
+    img.onload=()=>{
+      const c=document.createElement('canvas');
+      c.width=img.naturalWidth; c.height=img.naturalHeight;
+      c.getContext('2d').drawImage(img,0,0);
+      URL.revokeObjectURL(url); res(c);
+    };
+    img.onerror=rej; img.src=url;
+  });
 }
-function buildPrintSheets() { let sheetDiv = document.getElementById('printSheet'); sheetDiv.innerHTML=''; if(!photos.length) return; let preset=PRESETS[S.preset]; let gap_mm=3, pageW_mm=200, pageH_mm=287; let maxCols = 4; let perPage = 16; let copies = S.copies; let allImages=[]; photos.forEach(p=>{ for(let i=0;i<copies;i++) allImages.push(p.processedURL); });
-  for(let i=0;i<allImages.length;i+=perPage){ let page=document.createElement('div'); page.className='print-page'; page.style.cssText='width:210mm; min-height:297mm; padding:5mm; display:flex; flex-wrap:wrap; gap:3mm; background:white;'; let slice=allImages.slice(i,i+perPage); slice.forEach(src=>{ let img=document.createElement('img'); img.src=src; img.style.width=`${preset.w}mm`; img.style.height=`${preset.h}mm`; img.style.objectFit='cover'; page.appendChild(img); }); sheetDiv.appendChild(page); } }
-function showUI() { document.getElementById('gallerySection').style.display='block'; document.getElementById('previewArea').style.display='block'; document.getElementById('actionPanel').style.display='flex'; buildPrintPreview(); buildPrintSheets(); }
-function hideUI() { document.getElementById('gallerySection').style.display='none'; document.getElementById('previewArea').style.display='none'; document.getElementById('actionPanel').style.display='none'; }
-function toast(msg,type=''){ let t=document.getElementById('toast'); t.innerText=msg; t.style.opacity='1'; t.style.borderLeftColor=type==='error'?'var(--red)':'var(--amber)'; setTimeout(()=>t.style.opacity='0',2300); }
-document.getElementById('clearBtn').onclick=()=>{ photos=[]; renderGallery(); hideUI(); toast('All cleared',''); };
-document.getElementById('zipBtn').onclick=async()=>{ if(!photos.length) return; let zip=new JSZip(); let folder=zip.folder('enhanced_faces'); photos.forEach((p,i)=>folder.file(`face_${i+1}.jpg`, p.processedURL.split(',')[1], {base64:true})); let blob=await zip.generateAsync({type:'blob'}); let a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download='neural_enhanced.zip'; a.click(); toast('ZIP ready ✓',''); };
-document.getElementById('printBtn').onclick=()=>{ if(!photos.length) return; buildPrintSheets(); window.print(); };
-document.getElementById('uploadZone').addEventListener('click', (e)=>{ if(!e.target.classList.contains('up-btn')) document.getElementById('fileInput').click(); });
-document.getElementById('fileInput').addEventListener('change', (e)=>handleFiles(Array.from(e.target.files)));
-document.getElementById('uploadZone').addEventListener('dragover', e=>{ e.preventDefault(); document.getElementById('uploadZone').classList.add('drag-over'); });
-document.getElementById('uploadZone').addEventListener('dragleave', e=>document.getElementById('uploadZone').classList.remove('drag-over'));
-document.getElementById('uploadZone').addEventListener('drop', e=>{ e.preventDefault(); document.getElementById('uploadZone').classList.remove('drag-over'); handleFiles(Array.from(e.dataTransfer.files)); });
-window.reprocessAll = reprocessAll;
+async function renderPDF(file) {
+  const ab=await file.arrayBuffer();
+  const pdf=await pdfjsLib.getDocument({data:ab}).promise;
+  const page=await pdf.getPage(1);
+  const vp=page.getViewport({scale:2.5});
+  const c=document.createElement('canvas'); c.width=vp.width; c.height=vp.height;
+  await page.render({canvasContext:get2d(c),viewport:vp}).promise;
+  return c;
+}
+function dataURLtoCanvas(url) {
+  return new Promise(res=>{
+    const img=new Image();
+    img.onload=()=>{
+      const c=document.createElement('canvas');
+      c.width=img.width; c.height=img.height;
+      c.getContext('2d').drawImage(img,0,0); res(c);
+    };
+    img.src=url;
+  });
+}
+function canvasToDataURL(c,q=0.95){ return c.toDataURL('image/jpeg',q); }
+function cloneCanvas(s){
+  const c=document.createElement('canvas');
+  c.width=s.width; c.height=s.height;
+  get2d(c, true).drawImage(s,0,0);
+  return c;
+}
+function hexToRgb(hex){ return { r:parseInt(hex.slice(1,3),16), g:parseInt(hex.slice(3,5),16), b:parseInt(hex.slice(5,7),16) }; }
+
+// ========== PROFESSIONAL BG REMOVAL (unchanged, edge refined) ==========
+function downscaleCanvas(src, maxSize) {
+  if (src.width <= maxSize && src.height <= maxSize) return src;
+  const sc = maxSize / Math.max(src.width, src.height);
+  const c = document.createElement('canvas');
+  c.width = Math.round(src.width * sc); c.height = Math.round(src.height * sc);
+  c.getContext('2d').drawImage(src, 0, 0, c.width, c.height);
+  return c;
+}
+function refineEdges(imageData, maskData, iterations = 2) {
+  const width = imageData.width, height = imageData.height;
+  const refined = new Float32Array(maskData);
+  for (let iter = 0; iter < iterations; iter++) {
+    const temp = new Float32Array(refined);
+    for (let y = 1; y < height - 1; y++) {
+      for (let x = 1; x < width - 1; x++) {
+        const idx = y * width + x;
+        if (refined[idx] > 0.95 || refined[idx] < 0.05) continue;
+        let sum = 0, weight = 0;
+        for (let dy = -1; dy <= 1; dy++) {
+          for (let dx = -1; dx <= 1; dx++) {
+            const nx = x + dx, ny = y + dy;
+            if (nx >= 0 && nx < width && ny >= 0 && ny < height) {
+              const nidx = ny * width + nx;
+              const imgIdx = (ny * width + nx) * 4, centerIdx = (y * width + x) * 4;
+              const colorDiff = Math.abs(imageData.data[imgIdx] - imageData.data[centerIdx]) +
+                               Math.abs(imageData.data[imgIdx+1] - imageData.data[centerIdx+1]) +
+                               Math.abs(imageData.data[imgIdx+2] - imageData.data[centerIdx+2]);
+              const colorWeight = Math.exp(-colorDiff / 50);
+              sum += temp[nidx] * colorWeight;
+              weight += colorWeight;
+            }
+          }
+        }
+        if (weight > 0) refined[idx] = sum / weight;
+      }
+    }
+  }
+  return refined;
+}
+function applyAlphaMatting(imageData, mask, bgColor) {
+  const width = imageData.width, height = imageData.height;
+  const output = new ImageData(width, height);
+  let bgR=255,bgG=255,bgB=255;
+  if (bgColor !== 'transparent') { const rgb=hexToRgb(bgColor); bgR=rgb.r; bgG=rgb.g; bgB=rgb.b; }
+  for (let i=0; i<width*height; i++) {
+    let alpha = Math.min(1, Math.max(0, mask[i]));
+    alpha = Math.pow(alpha, 0.7);
+    const invAlpha = 1 - alpha;
+    output.data[i*4]   = imageData.data[i*4] * alpha + bgR * invAlpha;
+    output.data[i*4+1] = imageData.data[i*4+1] * alpha + bgG * invAlpha;
+    output.data[i*4+2] = imageData.data[i*4+2] * alpha + bgB * invAlpha;
+    output.data[i*4+3] = 255;
+  }
+  return output;
+}
+async function applyBgRemoval(srcCanvas) {
+  if (!segmenter || !S.removeBg) return srcCanvas;
+  try {
+    setProgress(undefined, '✂ BG REMOVAL...');
+    const ws = downscaleCanvas(srcCanvas, 800);
+    const segmentation = await segmenter.segmentPeople(ws, { flattenMasks: false, internal: { segmentationThreshold: 0.5 } });
+    if (!segmentation || segmentation.length === 0) return srcCanvas;
+    let mask = segmentation[0].mask;
+    let maskData = await mask.toImageData();
+    const width = maskData.width, height = maskData.height;
+    const floatMask = new Float32Array(width*height);
+    for (let i=0;i<width*height;i++) floatMask[i] = maskData.data[i*4]/255;
+    const tempCanvas = document.createElement('canvas');
+    tempCanvas.width = width; tempCanvas.height = height;
+    const tempCtx = tempCanvas.getContext('2d');
+    tempCtx.drawImage(ws, 0, 0, width, height);
+    const imageData = tempCtx.getImageData(0,0,width,height);
+    const refinedMask = refineEdges(imageData, floatMask, 2);
+    const result = applyAlphaMatting(imageData, refinedMask, S.bg);
+    const outputCanvas = document.createElement('canvas');
+    outputCanvas.width = srcCanvas.width; outputCanvas.height = srcCanvas.height;
+    const ctx = outputCanvas.getContext('2d');
+    ctx.drawImage(tempCanvas, 0, 0, width, height);
+    ctx.putImageData(result, 0, 0);
+    ctx.drawImage(outputCanvas, 0, 0, srcCanvas.width, srcCanvas.height);
+    return outputCanvas;
+  } catch(e) { console.warn('BG skip',e); return srcCanvas; }
+}
+
+// FACE DETECTION
+async function detectFace(canvas) {
+  if(!blazeModel||!S.faceAlign) return null;
+  try {
+    const preds=await blazeModel.estimateFaces(canvas,false);
+    if(!preds.length) return null;
+    return preds.reduce((a,b)=>a.probability[0]>b.probability[0]?a:b);
+  } catch(e){ return null; }
+}
+
+function cropToPassport(src, preset, dpi, detection) {
+  const toP = mm => Math.round(mm / 25.4 * dpi);
+  const tw = toP(preset.w), th = toP(preset.h);
+  const c = document.createElement('canvas'); c.width=tw; c.height=th;
+  const ctx = get2d(c, true);
+  ctx.fillStyle = S.bg; ctx.fillRect(0,0,tw,th);
+  if (detection) {
+    const [x1,y1] = detection.topLeft, [x2,y2] = detection.bottomRight;
+    const faceH = y2 - y1, faceCX = (x1 + x2)/2, crownY = y1 - faceH*0.35, chinY = y2 + faceH*0.05;
+    const headH = chinY - crownY, targetHeadH = th*0.75, scale = targetHeadH / headH;
+    const srcPhotoH = th/scale, srcPhotoW = tw/scale, srcY = crownY - (th*0.08/scale);
+    const srcX = Math.max(0, Math.min(src.width - srcPhotoW, faceCX - srcPhotoW/2));
+    ctx.drawImage(src, srcX, srcY, srcPhotoW, srcPhotoH, 0, 0, tw, th);
+  } else {
+    const sa = src.width/src.height, da = tw/th;
+    let dw,dh,ox,oy;
+    if (sa>da) { dh=th; dw=src.width*(th/src.height); ox=(tw-dw)/2; oy=0; }
+    else { dw=tw; dh=src.height*(tw/src.width); ox=0; oy=(th-dh)*0.12; }
+    ctx.drawImage(src,0,0,src.width,src.height,ox,oy,dw,dh);
+  }
+  const borderPx = Math.max(2, Math.round(tw*0.012));
+  ctx.strokeStyle = '#888888'; ctx.lineWidth = borderPx;
+  ctx.strokeRect(borderPx/2, borderPx/2, tw - borderPx, th - borderPx);
+  return c;
+}
+
+// === NEW AUTO FACE ENHANCER: SMOOTH + ORANGE SKIN (NO OTHER ENHANCEMENTS) ===
+function applyOrangeSkinSmooth(canvas) {
+  if (!S.orangeSmooth) return canvas;
+  const w = canvas.width, h = canvas.height;
+  const ctx = canvas.getContext('2d', { willReadFrequently: true });
+  let imageData = ctx.getImageData(0, 0, w, h);
+  const data = imageData.data;
+  const width = w, height = h;
+  
+  // Skin detection using YCbCr (robust)
+  const isSkin = (r,g,b) => {
+    const Y = 0.299*r + 0.587*g + 0.114*b;
+    const Cb = -0.169*r - 0.331*g + 0.5*b + 128;
+    const Cr = 0.5*r - 0.419*g - 0.081*b + 128;
+    return (Y > 55 && Y < 235 && Cb > 77 && Cb < 133 && Cr > 133 && Cr < 175);
+  };
+  
+  // Edge-aware smoothing (bilateral style) + orange tone for skin
+  const smoothed = new Uint8ClampedArray(data.length);
+  for (let y = 1; y < height-1; y++) {
+    for (let x = 1; x < width-1; x++) {
+      const idx = (y * width + x) * 4;
+      const r = data[idx], g = data[idx+1], b = data[idx+2];
+      if (!isSkin(r,g,b)) {
+        // preserve non-skin
+        smoothed[idx]=r; smoothed[idx+1]=g; smoothed[idx+2]=b; smoothed[idx+3]=255;
+        continue;
+      }
+      // Apply gaussian-like blur for smoothing only on skin
+      let sumR=0, sumG=0, sumB=0, count=0;
+      for (let dy = -1; dy <= 1; dy++) {
+        for (let dx = -1; dx <= 1; dx++) {
+          const nx = x+dx, ny = y+dy;
+          if (nx>=0 && nx<width && ny>=0 && ny<height) {
+            const nidx = (ny*width+nx)*4;
+            sumR += data[nidx]; sumG += data[nidx+1]; sumB += data[nidx+2];
+            count++;
+          }
+        }
+      }
+      let smoothR = Math.round(sumR/count);
+      let smoothG = Math.round(sumG/count);
+      let smoothB = Math.round(sumB/count);
+      
+      // ORANGE SKIN TRANSFORMATION: golden/orange hue, warm glow
+      // Increase red & slightly reduce blue, keep green warm
+      let finalR = Math.min(255, Math.round(smoothR * 1.12));
+      let finalG = Math.min(255, Math.round(smoothG * 0.96));
+      let finalB = Math.min(255, Math.round(smoothB * 0.82));
+      // extra orange boost for natural tan look
+      finalR = Math.min(255, finalR + 5);
+      finalG = Math.min(255, finalG + 2);
+      
+      smoothed[idx] = finalR;
+      smoothed[idx+1] = finalG;
+      smoothed[idx+2] = finalB;
+      smoothed[idx+3] = 255;
+    }
+  }
+  // Copy back
+  for (let i=0; i<data.length; i++) {
+    if (smoothed[i] !== undefined) data[i] = smoothed[i];
+  }
+  ctx.putImageData(imageData, 0, 0);
+  return canvas;
+}
+
+function enhance(canvas) {
+  // ONLY auto face enhancer: smooth + orange skin (no levels, no sharpen, no white balance)
+  applyOrangeSkinSmooth(canvas);
+  return canvas;
+}
+
+// MAIN PIPELINE
+async function processPhoto(srcCanvas) {
+  let work = srcCanvas;
+  let bgRemoved = false;
+  if(S.removeBg && segmenter){
+    try { work = await applyBgRemoval(srcCanvas); bgRemoved = true; } catch(e){ work = srcCanvas; }
+  }
+  const detection = await detectFace(work);
+  const faceDetected = !!detection;
+  const preset = PRESETS[S.preset];
+  const cropped = cropToPassport(work, preset, S.dpi, detection);
+  const originalURL = canvasToDataURL(cropped, 0.93);
+  const enh = cloneCanvas(cropped);
+  enhance(enh); // only orange skin smooth
+  const enhancedURL = canvasToDataURL(enh, 0.95);
+  return { originalURL, enhancedURL, faceDetected, bgRemoved };
+}
+
+// REPROCESS & UI
+async function reprocessAll(){
+  if(!photos.length)return;
+  setProcActive(true,0,'REPROCESSING (Orange Skin Smooth)...');
+  const old=[...photos];photos=[];photoGrid.innerHTML='';
+  for(let i=0;i<old.length;i++){
+    setProgress(i/old.length*100,`REPROCESS ${i+1}/${old.length}`);
+    const src=await dataURLtoCanvas(old[i].sourceURL);
+    const {originalURL,enhancedURL,faceDetected,bgRemoved}=await processPhoto(src);
+    const p={...old[i],originalURL,enhancedURL,faceDetected,bgRemoved};
+    photos.push(p);addCard(p);
+  }
+  setProcActive(false);
+  buildPrintPreview();buildPrintSheet();updateUI();
+}
+
+function addCard({id,name,originalURL,enhancedURL,faceDetected,bgRemoved}){
+  const card=document.createElement('div');
+  card.className='photo-card';card.dataset.id=id;
+  const ftag=faceDetected?`<span class="tag face">🍊 ORANGE AI</span>`:`<span class="tag fallback">📐 AUTO</span>`;
+  const btag=bgRemoved?`<span class="tag bg">✂ BG</span>`:'';
+  card.innerHTML=`
+    <div class="card-imgs">
+      <div class="cimg-wrap"><img src="${originalURL}" loading="lazy"><span class="cimg-label">RAW CROP</span></div>
+      <div class="cimg-wrap"><img src="${enhancedURL}" loading="lazy"><span class="cimg-label enh">✨ SMOOTH+ORANGE</span></div>
+    </div>
+    <div class="card-foot">${ftag}${btag}<span class="card-name" title="${name}">${name}</span><button class="card-del" onclick="deletePhoto(${id})">✕</button></div>`;
+  photoGrid.appendChild(card);updateUI();
+}
+
+function deletePhoto(id){
+  photos=photos.filter(p=>p.id!==id);
+  const el=photoGrid.querySelector(`[data-id="${id}"]`);if(el)el.remove();
+  if(!photos.length){clearAll();return;}
+  buildPrintPreview();buildPrintSheet();updateUI();
+}
+function clearAll(){
+  photos=[];photoGrid.innerHTML='';a4Paper.innerHTML='';printSheet.innerHTML='';
+  gallery.style.display='none';previewSection.style.display='none';actionBar.style.display='none';
+}
+function getPhotosForPrint(){
+  const copies=Math.max(1,parseInt(document.getElementById('copiesInput').value)||6);
+  const res=[];photos.forEach(p=>{for(let i=0;i<copies;i++)res.push(p)});return res;
+}
+function buildPrintPreview(){
+  if(!photos.length)return;
+  const preset=PRESETS[S.preset],cols=S.cols,pp=getPhotosForPrint();
+  const pageW=557,gap=7,photoW=Math.floor((pageW-(cols-1)*gap)/cols),photoH=Math.round(photoW*preset.h/preset.w);
+  a4Paper.innerHTML='';a4Paper.style.gap=gap+'px';
+  pp.forEach(p=>{const img=document.createElement('img');img.src=p.enhancedURL;img.className='pv-photo';img.style.width=photoW+'px';img.style.height=photoH+'px';img.style.objectFit='cover';a4Paper.appendChild(img)});
+  const rows=Math.ceil(pp.length/cols);
+  a4Paper.style.minHeight=Math.max(842,rows*(photoH+gap)+38)+'px';
+  const mm2px=mm=>Math.round(mm/25.4*S.dpi);
+  const copies=Math.max(1,parseInt(document.getElementById('copiesInput').value)||6);
+  document.getElementById('pvInfo').textContent=`${pp.length} photos · ${photos.length}×${copies} · ${preset.label} · ORANGE SKIN ACTIVE`;
+}
+function buildPrintSheet(){
+  if(!photos.length)return;
+  const preset=PRESETS[S.preset],gap_mm=2,pageW_mm=200,pageH_mm=287;
+  const maxCols=Math.min(S.cols,Math.floor((pageW_mm+gap_mm)/(preset.w+gap_mm)));
+  const maxRows=Math.floor((pageH_mm+gap_mm)/(preset.h+gap_mm));
+  const perPage=maxCols*maxRows,pp=getPhotosForPrint();
+  printSheet.innerHTML='';
+  for(let i=0;i<pp.length;i+=perPage){
+    const slice=pp.slice(i,i+perPage),page=document.createElement('div');
+    page.className='print-page';
+    page.style.cssText=`width:210mm;min-height:297mm;padding:5mm;display:flex;flex-wrap:wrap;align-content:flex-start;gap:${gap_mm}mm;background:#fff;page-break-after:always;`;
+    slice.forEach(p=>{const img=document.createElement('img');img.src=p.enhancedURL;img.className='print-photo';img.style.cssText=`width:${preset.w}mm;height:${preset.h}mm;object-fit:cover;display:block;flex-shrink:0`;page.appendChild(img)});
+    printSheet.appendChild(page);
+  }
+}
+function doPrint(){ if(!photos.length){toast('No photos','error');return;} buildPrintSheet();window.print(); }
+async function downloadZIP(){
+  if(!photos.length)return;
+  toast('Creating ZIP...','info');
+  const zip=new JSZip(),folder=zip.folder('passport_photos_orange_skin');
+  photos.forEach((p,i)=>folder.file(`photo_${String(i+1).padStart(3,'0')}.jpg`,p.enhancedURL.split(',')[1],{base64:true}));
+  const blob=await zip.generateAsync({type:'blob'});
+  const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download='passport_orange_enhanced.zip';a.click();URL.revokeObjectURL(a.href);
+  toast('ZIP ready ✓','success');
+}
+function showUI(){ gallery.style.display='block';previewSection.style.display='block';actionBar.style.display='flex';updateUI(); }
+function updateUI(){ const n=photos.length,p=PRESETS[S.preset]; document.getElementById('galleryCount').textContent=n; document.getElementById('infoPill').textContent=`${n} PHOTO${n!==1?'S':''} · ${p.label} · ORANGE SKIN`; }
+function setProcActive(on,pct,text){ procBar.classList.toggle('active',on);if(text)procText.textContent=text;if(pct!==undefined)progFill.style.width=pct+'%';if(!on)setTimeout(()=>{progFill.style.width='0%'},400); }
+function setProgress(pct,text){ progFill.style.width=pct+'%';if(text)procText.textContent=text; }
+let _tt;
+function toast(msg,type=''){ const el=document.getElementById('toast');el.textContent=msg;el.className='show '+type;clearTimeout(_tt);_tt=setTimeout(()=>el.className='',3200); }
 </script>
 </body>
 </html>
