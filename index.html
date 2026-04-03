@@ -467,12 +467,14 @@ async function applyBgRemoval(srcCanvas) {
     const imageData = tempCtx.getImageData(0,0,width,height);
     const refinedMask = refineEdges(imageData, floatMask, 2);
     const result = applyAlphaMatting(imageData, refinedMask, S.bg);
+   // Put the processed result back onto tempCanvas
+    tempCtx.putImageData(result, 0, 0);
+
+    // Now scale tempCanvas (downscaled+processed) up to original resolution
     const outputCanvas = document.createElement('canvas');
     outputCanvas.width = srcCanvas.width; outputCanvas.height = srcCanvas.height;
     const ctx = outputCanvas.getContext('2d');
-    ctx.drawImage(tempCanvas, 0, 0, width, height);
-    ctx.putImageData(result, 0, 0);
-    ctx.drawImage(outputCanvas, 0, 0, srcCanvas.width, srcCanvas.height);
+    ctx.drawImage(tempCanvas, 0, 0, srcCanvas.width, srcCanvas.height);
     return outputCanvas;
   } catch(e) { console.warn('BG skip',e); return srcCanvas; }
 }
