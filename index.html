@@ -459,11 +459,16 @@ async function applyBgRemoval(srcCanvas) {
     // toBinaryMask is reliable across all tfjs versions
     const fgColor = { r:255, g:255, b:255, a:255 };
     const bgColor = { r:0,   g:0,   b:0,   a:255 };
-    const binaryMask = await bodySegmentation.toBinaryMask(
+    // toBinaryMask returns an HTMLCanvasElement — must read pixels from it
+    const maskCanvas = await bodySegmentation.toBinaryMask(
       segmentation, fgColor, bgColor, false
     );
 
-    const width = binaryMask.width, height = binaryMask.height;
+    const width = maskCanvas.width, height = maskCanvas.height;
+
+    // Read actual pixel data from the mask canvas
+    const maskCtx = maskCanvas.getContext('2d', { willReadFrequently: true });
+    const maskImageData = maskCtx.getImageData(0, 0, width, height);
 
     // Get downscaled image pixels
     const tempCanvas = document.createElement('canvas');
@@ -472,12 +477,11 @@ async function applyBgRemoval(srcCanvas) {
     tempCtx.drawImage(ws, 0, 0, width, height);
     const imageData = tempCtx.getImageData(0, 0, width, height);
 
-    // Float mask from binary mask (white=person, black=bg)
+    // Float mask — white(255)=person keep, black(0)=background remove
     const floatMask = new Float32Array(width * height);
     for (let i = 0; i < width * height; i++) {
-      floatMask[i] = binaryMask.data[i * 4] / 255;
+      floatMask[i] = maskImageData.data[i * 4] / 255;
     }
-
     const refinedMask = refineEdges(imageData, floatMask, 2);
     const result = applyAlphaMatting(imageData, refinedMask, S.bg);
 
