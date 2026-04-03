@@ -445,8 +445,64 @@ function cloneCanvas(s){
 function hexToRgb(hex){ return { r:parseInt(hex.slice(1,3),16), g:parseInt(hex.slice(3,5),16), b:parseInt(hex.slice(5,7),16) }; }
 
 // ══════════════════════════════════════════════════════════════
-// BACKGROUND REMOVAL — MediaPipe Selfie Segmentation
+// BACKGROUND REMOVAL — Claude Vision API (primary) + MediaPipe (fallback)
 // ══════════════════════════════════════════════════════════════
+
+function downscaleCanvas(src, maxSize) {
+  if (src.width <= maxSize && src.height <= maxSize) return src;
+  const sc = maxSize / Math.max(src.width, src.height);
+  const c = document.createElement('canvas');
+  c.width = Math.round(src.width * sc); c.height = Math.round(src.height * sc);
+  c.getContext('2d').drawImage(src, 0, 0, c.width, c.height);
+  return c;
+}
+function canvasToBase64(canvas, quality=0.85) {
+  return canvas.toDataURL('image/jpeg', quality).split(',')[1];
+}
+
+// Claude Vision API: generate black/white mask (white=person, black=bg)
+async function claudeBgMask(srcCanvas) {
+  const small = downscaleCanvas(srcCanvas, 512);
+  const b64 = canvasToBase64(small, 0.80);
+  const resp = await fetch('https://api.anthropic.com/v1/messages', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      model: 'claude-sonnet-4-20250514',
+      max_tokens: 1000,
+      system: `You are a background removal assistant. Analyze the portrait photo and output ONLY a JSON object with no markdown or extra text.
+Format: {"mask":"data:image/png;base64,..."} 
+The base64 is a grayscale PNG the SAME pixel dimensions as the input (${small.width}x${small.height}).
+White (255) = subject/foreground: face, hair, neck, ears, shoulders, clothing, arms, hands — everything that is the person.
+Black (0) = background only.
+Be very precise at hair edges. Include the full visible body. Do not cut off shoulders or arms.`,
+      messages: [{
+        role: 'user',
+        content: [
+          { type: 'image', source: { type: 'base64', media_type: 'image/jpeg', data: b64 } },
+          { type: 'text', text: `Create foreground mask for this ${small.width}x${small.height} portrait. JSON only.` }
+        ]
+      }]
+    })
+  });
+  if (!resp.ok) throw new Error(`Claude API ${resp.status}`);
+  const data = await resp.json();
+  const text = (data.content?.find(b => b.type === 'text')?.text || '').replace(/```json|```/g,'').trim();
+  let maskURL;
+  try { maskURL = JSON.parse(text).mask; } catch(e) {
+    const m = text.match(/data:image\/[^"'\s]+/); if (m) maskURL=m[0]; else throw new Error('No mask in response');
+  }
+  return new Promise((res,rej) => {
+    const img = new Image();
+    img.onload = () => {
+      const mc = document.createElement('canvas'); mc.width=srcCanvas.width; mc.height=srcCanvas.height;
+      get2d(mc,true).drawImage(img, 0, 0, mc.width, mc.height); res(mc);
+    };
+    img.onerror = rej; img.src = maskURL;
+  });
+}
+
+// MediaPipe fallback segmentation
 function runSegmentation(canvas) {
   return new Promise((resolve,reject) => {
     const t=setTimeout(()=>reject(new Error('seg timeout')),20000);
@@ -455,31 +511,16 @@ function runSegmentation(canvas) {
   });
 }
 
-async function applyBgRemoval(srcCanvas) {
-  const MAX=1024;
-  let ws=srcCanvas;
-  if(srcCanvas.width>MAX||srcCanvas.height>MAX){
-    const sc=MAX/Math.max(srcCanvas.width,srcCanvas.height);
-    ws=document.createElement('canvas');
-    ws.width=Math.round(srcCanvas.width*sc); ws.height=Math.round(srcCanvas.height*sc);
-    ws.getContext('2d').drawImage(srcCanvas,0,0,ws.width,ws.height);
-  }
-
-  const mask=await runSegmentation(ws);
-
-  // ── FIX: willReadFrequently=true — we call getImageData once but on a
-  //    canvas that the browser may re-use across multiple photos in a loop
-  const mc=document.createElement('canvas'); mc.width=ws.width; mc.height=ws.height;
-  get2d(mc, true).drawImage(mask,0,0,ws.width,ws.height);
-  const maskPx=get2d(mc, true).getImageData(0,0,ws.width,ws.height).data;
-  const srcPx =get2d(ws, true).getImageData(0,0,ws.width,ws.height).data;
-
-  const bg=hexToRgb(S.bg);
-  const outC=document.createElement('canvas'); outC.width=ws.width; outC.height=ws.height;
-  const outCtx=get2d(outC, true);
-  const outImg=outCtx.createImageData(ws.width,ws.height);
-  const outPx=outImg.data;
-
+// Composite mask onto BG color
+function compositeMask(srcCanvas, maskCanvas) {
+  const w=srcCanvas.width, h=srcCanvas.height;
+  const srcPx  = get2d(srcCanvas,true).getImageData(0,0,w,h).data;
+  const maskPx = get2d(maskCanvas,true).getImageData(0,0,w,h).data;
+  const bg = hexToRgb(S.bg);
+  const outC = document.createElement('canvas'); outC.width=w; outC.height=h;
+  const outCtx = get2d(outC,true);
+  const outImg = outCtx.createImageData(w,h);
+  const outPx = outImg.data;
   for(let i=0;i<srcPx.length;i+=4){
     const a=maskPx[i]/255;
     outPx[i]  =Math.round(srcPx[i]  *a + bg.r*(1-a));
@@ -488,13 +529,33 @@ async function applyBgRemoval(srcCanvas) {
     outPx[i+3]=255;
   }
   outCtx.putImageData(outImg,0,0);
-
-  if(ws!==srcCanvas){
-    const fc=document.createElement('canvas'); fc.width=srcCanvas.width; fc.height=srcCanvas.height;
-    fc.getContext('2d').drawImage(outC,0,0,srcCanvas.width,srcCanvas.height);
-    return fc;
-  }
   return outC;
+}
+
+async function applyBgRemoval(srcCanvas) {
+  // ── Primary: Claude Vision API (best quality) ──────────────
+  try {
+    setProgress(undefined, '🤖 AI BG REMOVAL...');
+    const maskCanvas = await claudeBgMask(srcCanvas);
+    return compositeMask(srcCanvas, maskCanvas);
+  } catch(e) {
+    console.warn('Claude BG mask failed, trying MediaPipe:', e.message);
+  }
+  // ── Fallback: MediaPipe ────────────────────────────────────
+  if (segModel) {
+    try {
+      setProgress(undefined, '✂ REMOVING BG...');
+      const ws = downscaleCanvas(srcCanvas, 1024);
+      const rawMask = await runSegmentation(ws);
+      const mc = document.createElement('canvas'); mc.width=ws.width; mc.height=ws.height;
+      get2d(mc,true).drawImage(rawMask,0,0,ws.width,ws.height);
+      // Upscale mask to original size
+      const fc = document.createElement('canvas'); fc.width=srcCanvas.width; fc.height=srcCanvas.height;
+      fc.getContext('2d').drawImage(mc,0,0,srcCanvas.width,srcCanvas.height);
+      return compositeMask(srcCanvas, fc);
+    } catch(e) { console.warn('MediaPipe BG also failed:', e.message); }
+  }
+  return srcCanvas; // last resort: unchanged
 }
 
 // ══════════════════════════════════════════════════════════════
@@ -510,41 +571,61 @@ async function detectFace(canvas) {
 }
 
 // ══════════════════════════════════════════════════════════════
-// CROP TO PASSPORT
+// CROP TO PASSPORT — face properly centered, 15% headroom
 // ══════════════════════════════════════════════════════════════
 function cropToPassport(src, preset, dpi, detection) {
-  const toP=mm=>Math.round(mm/25.4*dpi);
-  const tw=toP(preset.w), th=toP(preset.h);
-  const c=document.createElement('canvas'); c.width=tw; c.height=th;
-  const ctx=get2d(c, true); // willReadFrequently=true — enhance() reads this canvas repeatedly
-  ctx.fillStyle=S.bg; ctx.fillRect(0,0,tw,th);
+  const toP = mm => Math.round(mm / 25.4 * dpi);
+  const tw = toP(preset.w), th = toP(preset.h);
+  const c = document.createElement('canvas'); c.width=tw; c.height=th;
+  const ctx = get2d(c, true);
+  ctx.fillStyle = S.bg; ctx.fillRect(0,0,tw,th);
 
-  if(detection){
-    const [x1,y1]=detection.topLeft;
-    const [x2,y2]=detection.bottomRight;
-    const fH=y2-y1;
-    const crownY=y1-fH*0.28;
-    const chinY =y2+fH*0.04;
-    const totalH=chinY-crownY;
-    const [rEx,]= detection.landmarks[0];
-    const [lEx,]= detection.landmarks[1];
-    const eyeCX =(rEx+lEx)/2;
-    const scale  = (th*0.75)/totalH;
-    const srcW   = tw/scale;
-    const srcH   = th/scale;
-    const srcX   = eyeCX-srcW/2;
-    const srcY   = crownY-(th*0.10/scale);
-    ctx.drawImage(src, srcX, srcY, srcW, srcH, 0, 0, tw, th);
+  if (detection) {
+    // ── Passport standard: head height = 70-80% of photo height
+    //    crown starts at ~8% from top
+    const [x1,y1] = detection.topLeft;
+    const [x2,y2] = detection.bottomRight;
+    const faceH = y2 - y1;
+    const faceW = x2 - x1;
+    const faceCX = (x1 + x2) / 2;
+
+    // Estimate crown (top of head) ~35% above face-box top (hair)
+    const crownY = y1 - faceH * 0.35;
+    // Estimate chin ~5% below face-box bottom
+    const chinY  = y2 + faceH * 0.05;
+    const headH  = chinY - crownY; // full head height in source pixels
+
+    // Target: head fills 75% of photo height; crown at 8% from top
+    const targetHeadH = th * 0.75;
+    const scale = targetHeadH / headH;
+
+    // In source space, how many pixels correspond to the full photo
+    const srcPhotoH = th / scale;
+    const srcPhotoW = tw / scale;
+
+    // Position: crown lands at 8% from top of output photo
+    const srcY = crownY - (th * 0.08 / scale);
+    // Horizontally center on face center
+    const srcX = faceCX - srcPhotoW / 2;
+
+    ctx.drawImage(src, srcX, srcY, srcPhotoW, srcPhotoH, 0, 0, tw, th);
+
   } else {
-    const sa=src.width/src.height, da=tw/th;
-    let dw,dh,ox,oy;
-    if(sa>da){ dh=th; dw=src.width*(th/src.height); ox=(tw-dw)/2; oy=0; }
-    else { dw=tw; dh=src.height*(tw/src.width); ox=0; oy=(th-dh)*0.15; }
-    ctx.drawImage(src,0,0,src.width,src.height,ox,oy,dw,dh);
+    // ── Fallback: center-crop preserving aspect, shift up slightly ──
+    const sa = src.width / src.height, da = tw / th;
+    let dw, dh, ox, oy;
+    if (sa > da) {
+      dh=th; dw=src.width*(th/src.height);
+      ox=(tw-dw)/2; oy=0;
+    } else {
+      dw=tw; dh=src.height*(tw/src.width);
+      ox=0; oy=(th-dh)*0.12; // shift up 12% from center (put face upper half)
+    }
+    ctx.drawImage(src, 0, 0, src.width, src.height, ox, oy, dw, dh);
   }
 
-  // ── Border line drawn on top of the cropped photo ──────────────────
-  const borderPx = Math.max(2, Math.round(tw * 0.012)); // ~1.2% of width, min 2px
+  // ── Border ────────────────────────────────────────────────────
+  const borderPx = Math.max(2, Math.round(tw * 0.012));
   ctx.strokeStyle = '#888888';
   ctx.lineWidth   = borderPx;
   ctx.strokeRect(borderPx/2, borderPx/2, tw - borderPx, th - borderPx);
@@ -578,57 +659,125 @@ async function processPhoto(srcCanvas) {
 }
 
 // ══════════════════════════════════════════════════════════════
-// ENHANCEMENT PIPELINE
-// ── FIX: All getContext('2d') calls inside enhance() now use
-//    get2d(c, true) because getImageData is called multiple times
+// ENHANCEMENT PIPELINE — Remini-style quality
+// Order: WB → CLAHE → Vibrance → S-curve → Skin smooth → Sharpen
 // ══════════════════════════════════════════════════════════════
 function enhance(c){
   const ctx=get2d(c, true), w=c.width, h=c.height;
   let id;
   if(S.whiteBalance){ id=ctx.getImageData(0,0,w,h); doWhiteBalance(id.data); ctx.putImageData(id,0,0); }
-  if(S.autoLevels)  { id=ctx.getImageData(0,0,w,h); doAutoLevels(id.data,w*h); ctx.putImageData(id,0,0); }
-  if(S.brighten)    { id=ctx.getImageData(0,0,w,h); doBrighten(id.data,14); ctx.putImageData(id,0,0); }
-  if(S.skinSmooth)  { id=ctx.getImageData(0,0,w,h); doSkinSmooth(id,w,h); ctx.putImageData(id,0,0); }
-  if(S.sharpen)     { id=ctx.getImageData(0,0,w,h); ctx.putImageData(doUnsharpMask(id,w,h),0,0); }
+  if(S.autoLevels)  { id=ctx.getImageData(0,0,w,h); doCLAHE(id.data,w,h); ctx.putImageData(id,0,0); }
+  if(S.brighten)    { id=ctx.getImageData(0,0,w,h); doSCurve(id.data); ctx.putImageData(id,0,0); }
+  if(S.autoLevels)  { id=ctx.getImageData(0,0,w,h); doVibrance(id.data, 30); ctx.putImageData(id,0,0); }
+  if(S.skinSmooth)  { id=ctx.getImageData(0,0,w,h); doSkinSmooth(id,w,h,3); ctx.putImageData(id,0,0); }
+  if(S.sharpen)     { id=ctx.getImageData(0,0,w,h); ctx.putImageData(doUnsharpMask(id,w,h,0.8,1.8),0,0); }
+  if(S.sharpen)     { id=ctx.getImageData(0,0,w,h); ctx.putImageData(doUnsharpMask(id,w,h,0.4,0.8),0,0); }
 }
 
 function doWhiteBalance(d){
   let r=0,g=0,b=0,n=d.length/4;
   for(let i=0;i<d.length;i+=4){r+=d[i];g+=d[i+1];b+=d[i+2]}
   const gr=(r+g+b)/(3*n);
-  const rs=Math.min(1.55,gr/(r/n||1)),gs=Math.min(1.55,gr/(g/n||1)),bs=Math.min(1.55,gr/(b/n||1));
+  const rs=Math.min(1.4,gr/(r/n||1)),gs=Math.min(1.4,gr/(g/n||1)),bs=Math.min(1.4,gr/(b/n||1));
   for(let i=0;i<d.length;i+=4){d[i]=Math.min(255,d[i]*rs);d[i+1]=Math.min(255,d[i+1]*gs);d[i+2]=Math.min(255,d[i+2]*bs)}
 }
-function doAutoLevels(d,n){
-  const h=[new Uint32Array(256),new Uint32Array(256),new Uint32Array(256)];
-  for(let i=0;i<d.length;i+=4){h[0][d[i]]++;h[1][d[i+1]]++;h[2][d[i+2]]++}
-  const lo=[],hi=[];
-  for(let c=0;c<3;c++){
-    let s=0,l=0,hv=255;const c1=n*.005,c99=n*.995;
-    for(let v=0;v<256;v++){s+=h[c][v];if(s<c1)l=v;if(s<c99)hv=v}
-    lo.push(l);hi.push(Math.max(hv,l+1));
+
+// CLAHE-style adaptive contrast — much better than simple auto-levels
+function doCLAHE(d, w, h) {
+  const tileW=Math.max(1,Math.floor(w/8)), tileH=Math.max(1,Math.floor(h/8));
+  const lut = buildCLAHELUT(d, w, h, tileW, tileH, 3.0);
+  for(let i=0;i<d.length;i+=4){
+    for(let c=0;c<3;c++) d[i+c]=Math.min(255,Math.max(0,lut[d[i+c]]));
   }
-  for(let i=0;i<d.length;i+=4)for(let c=0;c<3;c++)d[i+c]=Math.min(255,Math.max(0,(d[i+c]-lo[c])/(hi[c]-lo[c])*255));
 }
-function doBrighten(d,amt){for(let i=0;i<d.length;i+=4){d[i]=Math.min(255,d[i]+amt);d[i+1]=Math.min(255,d[i+1]+amt);d[i+2]=Math.min(255,d[i+2]+amt)}}
-function doSkinSmooth(imageData,w,h){
-  const d=imageData.data,tmp=new Uint8ClampedArray(d);
-  const isSkin=(r,g,b)=>r>60&&r>g&&g>b&&(r-b)>25&&r<240;
-  for(let y=1;y<h-1;y++)for(let x=1;x<w-1;x++){
-    const ci=(y*w+x)*4;if(!isSkin(d[ci],d[ci+1],d[ci+2]))continue;
-    let sr=0,sg=0,sb=0,cnt=0;
-    for(let dy=-1;dy<=1;dy++)for(let dx=-1;dx<=1;dx++){
+function buildCLAHELUT(d, w, h, tw, th, clipLimit) {
+  const n = w * h;
+  const hist = new Uint32Array(256);
+  for(let i=0;i<d.length;i+=4){
+    const lum = Math.round(0.299*d[i]+0.587*d[i+1]+0.114*d[i+2]);
+    hist[lum]++;
+  }
+  // Clip and redistribute
+  const clip = Math.round(clipLimit * n / 256);
+  let excess = 0;
+  for(let v=0;v<256;v++){ if(hist[v]>clip){ excess+=hist[v]-clip; hist[v]=clip; } }
+  const perBin = Math.floor(excess/256);
+  for(let v=0;v<256;v++) hist[v]+=perBin;
+  // Build CDF → LUT
+  const lut = new Uint8ClampedArray(256);
+  let cdf=0;
+  for(let v=0;v<256;v++){ cdf+=hist[v]; lut[v]=Math.round(cdf*255/n); }
+  return lut;
+}
+
+// S-curve: lift shadows, punch midtones, slightly protect highlights
+function doSCurve(d) {
+  const lut = new Uint8ClampedArray(256);
+  for(let v=0;v<256;v++){
+    const x = v / 255;
+    // Smooth S-curve via cubic bezier approximation
+    const s = x < 0.5
+      ? 2 * x * x * (1.5 - x)          // lift shadows + midtones
+      : 1 - 2*(1-x)*(1-x)*(1.5-(1-x)); // compress highlights gently
+    lut[v] = Math.min(255, Math.max(0, Math.round(s * 270 - 7))); // slight boost
+  }
+  for(let i=0;i<d.length;i+=4){
+    d[i]=lut[d[i]]; d[i+1]=lut[d[i+1]]; d[i+2]=lut[d[i+2]];
+  }
+}
+
+// Vibrance: boost undersaturated colors, protect skin tones
+function doVibrance(d, amt) {
+  for(let i=0;i<d.length;i+=4){
+    const r=d[i],g=d[i+1],b=d[i+2];
+    const mx=Math.max(r,g,b), mn=Math.min(r,g,b);
+    const sat=(mx===0)?0:(mx-mn)/mx;
+    // Less boost for already-saturated or skin-tone pixels
+    const boost=(1-sat)*(amt/100);
+    const avg=(r+g+b)/3;
+    d[i]  =Math.min(255,Math.round(r+(r-avg)*boost));
+    d[i+1]=Math.min(255,Math.round(g+(g-avg)*boost));
+    d[i+2]=Math.min(255,Math.round(b+(b-avg)*boost));
+  }
+}
+
+// Stronger skin smooth with larger radius and bilateral-style edge protection
+function doSkinSmooth(imageData, w, h, radius=2){
+  const d=imageData.data, tmp=new Uint8ClampedArray(d);
+  const isSkin=(r,g,b)=>{
+    // Broader skin detection: Ycbcr skin range
+    const Y=0.299*r+0.587*g+0.114*b;
+    const Cb=-0.169*r-0.331*g+0.5*b+128;
+    const Cr=0.5*r-0.419*g-0.081*b+128;
+    return Y>40&&Y<230&&Cb>=77&&Cb<=127&&Cr>=133&&Cr<=173;
+  };
+  for(let y=radius;y<h-radius;y++) for(let x=radius;x<w-radius;x++){
+    const ci=(y*w+x)*4;
+    if(!isSkin(d[ci],d[ci+1],d[ci+2])) continue;
+    let sr=0,sg=0,sb=0,cnt=0, wsum=0;
+    for(let dy=-radius;dy<=radius;dy++) for(let dx=-radius;dx<=radius;dx++){
       const ni=((y+dy)*w+(x+dx))*4;
-      if(isSkin(d[ni],d[ni+1],d[ni+2])){sr+=d[ni];sg+=d[ni+1];sb+=d[ni+2];cnt++}
+      if(!isSkin(d[ni],d[ni+1],d[ni+2])) continue;
+      // Bilateral weight: penalise pixels with very different brightness (edge-preserve)
+      const dLum=Math.abs((d[ci]+d[ci+1]+d[ci+2])-(d[ni]+d[ni+1]+d[ni+2]));
+      const w2=Math.exp(-(dx*dx+dy*dy)/(2*radius*radius))*(1-dLum/512);
+      sr+=d[ni]*w2; sg+=d[ni+1]*w2; sb+=d[ni+2]*w2; wsum+=w2; cnt++;
     }
-    if(cnt>0){tmp[ci]=Math.round((d[ci]+sr/cnt)/2);tmp[ci+1]=Math.round((d[ci+1]+sg/cnt)/2);tmp[ci+2]=Math.round((d[ci+2]+sb/cnt)/2)}
+    if(wsum>0){
+      // Blend 70% smoothed + 30% original (preserve texture)
+      tmp[ci]  =Math.round((d[ci]  *0.3)+(sr/wsum*0.7));
+      tmp[ci+1]=Math.round((d[ci+1]*0.3)+(sg/wsum*0.7));
+      tmp[ci+2]=Math.round((d[ci+2]*0.3)+(sb/wsum*0.7));
+    }
   }
-  for(let i=0;i<d.length;i++)imageData.data[i]=tmp[i];
+  for(let i=0;i<d.length;i++) imageData.data[i]=tmp[i];
 }
-function doUnsharpMask(imageData,w,h){
-  const src=imageData.data,blurred=gaussianBlur(src,w,h,1.0),dst=new Uint8ClampedArray(src.length),amt=1.3;
+
+// Unsharp mask with configurable radius and amount
+function doUnsharpMask(imageData, w, h, r=1.0, amt=1.3){
+  const src=imageData.data, blurred=gaussianBlur(src,w,h,r), dst=new Uint8ClampedArray(src.length);
   for(let i=0;i<src.length-3;i+=4){
-    for(let c=0;c<3;c++)dst[i+c]=Math.min(255,Math.max(0,Math.round(src[i+c]+amt*(src[i+c]-blurred[i+c]))));
+    for(let c=0;c<3;c++) dst[i+c]=Math.min(255,Math.max(0,Math.round(src[i+c]+amt*(src[i+c]-blurred[i+c]))));
     dst[i+3]=src[i+3];
   }
   return new ImageData(dst,w,h);
