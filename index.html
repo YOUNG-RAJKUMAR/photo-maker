@@ -440,26 +440,10 @@ function cloneCanvas(s) {
 }
 
 // ══════════════════════════════════════════════════════════════
-// FACE CROP — Smart heuristic (no external model needed)
-// For passport photos: face is almost always in the upper 60%
-// of the frame. We return a synthetic "detection" box so the
-// same cropToPassport() logic works without modification.
+// FACE CROP — upper-biased center crop (no external model)
 // ══════════════════════════════════════════════════════════════
 async function detectFace(canvas) {
-  if (!S.faceAlign) return null;
-  const w = canvas.width, h = canvas.height;
-  // Assume face occupies center-x, upper 55% of image
-  const faceW = w * 0.45;
-  const faceH = h * 0.38;
-  const x1 = (w - faceW) / 2;
-  const y1 = h * 0.08;
-  const x2 = x1 + faceW;
-  const y2 = y1 + faceH;
-  return {
-    topLeft: [x1, y1],
-    bottomRight: [x2, y2],
-    probability: [0.99]
-  };
+  return null; // handled by smart crop in cropToPassport
 }
 
 // ══════════════════════════════════════════════════════════════
@@ -488,16 +472,16 @@ function cropToPassport(src, preset, dpi, detection) {
     const srcX = Math.max(0, Math.min(src.width - srcPhotoW, faceCX - srcPhotoW / 2));
     ctx.drawImage(src, srcX, srcY, srcPhotoW, srcPhotoH, 0, 0, tw, th);
   } else {
-    const sa = src.width / src.height, da = tw / th;
-    let dw, dh, ox, oy;
-    if (sa > da) {
-      dh = th; dw = src.width * (th / src.height);
-      ox = (tw - dw) / 2; oy = 0;
-    } else {
-      dw = tw; dh = src.height * (tw / src.width);
-      ox = 0; oy = (th - dh) * 0.12;
-    }
-    ctx.drawImage(src, 0, 0, src.width, src.height, ox, oy, dw, dh);
+    // Smart upper-biased crop:
+    // 1. Fit width of source to passport width
+    // 2. Take a portrait-sized slice starting near the top of the image
+    const scale  = tw / src.width;          // scale so width fills passport
+    const sliceH = th / scale;              // how many source-px tall we need
+    // Start 3% from top — leaves a tiny breathing room above the head
+    const startY = Math.max(0, src.height * 0.03);
+    // If image is shorter than needed, start from 0
+    const safeStartY = Math.min(startY, Math.max(0, src.height - sliceH));
+    ctx.drawImage(src, 0, safeStartY, src.width, sliceH, 0, 0, tw, th);
   }
 
   const borderPx = Math.max(2, Math.round(tw * 0.012));
@@ -527,7 +511,7 @@ async function processPhoto(srcCanvas) {
   }
 
   const detection   = await detectFace(work);
-  const faceDetected = true; // heuristic always provides a crop box
+  const faceDetected = false;
 
   const preset  = PRESETS[S.preset];
   const cropped = cropToPassport(work, preset, S.dpi, detection);
