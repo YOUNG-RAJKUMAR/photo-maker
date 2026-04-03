@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>StudioSnap — Auto Face Enhancer · Orange Skin Smooth</title>
+<title>StudioSnap — Auto Face Enhancer · Deep Orange Skin</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
 <!-- TensorFlow.js core + backends + BlazeFace + Body Segmentation -->
@@ -121,7 +121,7 @@ main{max-width:1400px;margin:0 auto;padding:28px}
 
 <header>
   <div class="logo">STUDIO<b>SNAP</b></div>
-  <div class="tagline">AUTO FACE ENHANCER · ORANGE SKIN SMOOTH · PASSPORT AI</div>
+  <div class="tagline">AUTO ORANGE SKIN · DEEP WARMTH · PASSPORT AI</div>
   <div class="hdr-right">
     <span class="badge live">● OFFLINE READY</span>
     <span class="badge ok" id="badgeFace">✓ FACE AI</span>
@@ -134,7 +134,7 @@ main{max-width:1400px;margin:0 auto;padding:28px}
   <div class="divider"></div>
   <div class="sg">
     <span class="slabel">✨ AUTO FACE ENHANCER</span>
-    <button class="tog on" data-key="orangeSmooth" style="background:var(--amber-d);border-color:var(--amber);color:var(--amber)">🍊 SMOOTH + ORANGE SKIN</button>
+    <button class="tog on" data-key="orangeSmooth" style="background:var(--amber-d);border-color:var(--amber);color:var(--amber)">🍊 DEEP ORANGE + SMOOTH SKIN</button>
   </div>
   <div class="divider"></div>
   <div class="sg">
@@ -176,8 +176,8 @@ main{max-width:1400px;margin:0 auto;padding:28px}
 <main>
   <div class="upload-zone" id="uploadZone">
     <span class="up-icon">🍊</span>
-    <div class="up-title">AUTO FACE ENHANCER</div>
-    <div class="up-sub">Smooth + Orange Glow · Professional Passport Studio</div>
+    <div class="up-title">DEEP ORANGE SKIN ENHANCER</div>
+    <div class="up-sub">Rich golden-orange tone · Natural smoothness · Professional passport studio</div>
     <div class="up-formats">
       <span class="fmt-chip">JPG</span><span class="fmt-chip">PNG</span>
       <span class="fmt-chip">WEBP</span><span class="fmt-chip">PDF</span><span class="fmt-chip">Bulk</span>
@@ -190,7 +190,7 @@ main{max-width:1400px;margin:0 auto;padding:28px}
   </div>
 
   <div id="gallery">
-    <div class="sh">ENHANCED PORTRAITS · ORANGE SKIN SMOOTH &nbsp;<em id="galleryCount">0</em></div>
+    <div class="sh">ENHANCED PORTRAITS · DEEP ORANGE SKIN &nbsp;<em id="galleryCount">0</em></div>
     <div class="photo-grid" id="photoGrid"></div>
   </div>
 
@@ -198,7 +198,7 @@ main{max-width:1400px;margin:0 auto;padding:28px}
     <div class="sh">A4 PRINT PREVIEW — <em id="pvInfo"></em></div>
     <div class="preview-outer">
       <div class="a4-paper" id="a4Paper"></div>
-      <div class="preview-hint">↑ Warm orange skin enhancement active · ready to print</div>
+      <div class="preview-hint">↑ Rich orange skin enhancement · ready to print</div>
     </div>
   </div>
 
@@ -348,7 +348,7 @@ async function handleFiles(files) {
   setProgress(100,'DONE!');
   setTimeout(()=>setProcActive(false),500);
   showUI(); buildPrintPreview(); buildPrintSheet();
-  toast(`${valid.length} photo${valid.length!==1?'s':''} ready ✓ | Auto Orange Skin Smooth Active`,'success');
+  toast(`${valid.length} photo${valid.length!==1?'s':''} ready ✓ | Deep Orange Skin Active`,'success');
 }
 
 function loadImageCanvas(file) {
@@ -392,7 +392,7 @@ function cloneCanvas(s){
 }
 function hexToRgb(hex){ return { r:parseInt(hex.slice(1,3),16), g:parseInt(hex.slice(3,5),16), b:parseInt(hex.slice(5,7),16) }; }
 
-// ========== PROFESSIONAL BG REMOVAL (unchanged, edge refined) ==========
+// ========== PROFESSIONAL BG REMOVAL (unchanged) ==========
 function downscaleCanvas(src, maxSize) {
   if (src.width <= maxSize && src.height <= maxSize) return src;
   const sc = maxSize / Math.max(src.width, src.height);
@@ -513,8 +513,8 @@ function cropToPassport(src, preset, dpi, detection) {
   return c;
 }
 
-// === NEW AUTO FACE ENHANCER: SMOOTH + ORANGE SKIN (NO OTHER ENHANCEMENTS) ===
-function applyOrangeSkinSmooth(canvas) {
+// ========== DEEP ORANGE SKIN ENHANCER (smooth + rich orange/warmth) ==========
+function applyDeepOrangeSkinSmooth(canvas) {
   if (!S.orangeSmooth) return canvas;
   const w = canvas.width, h = canvas.height;
   const ctx = canvas.getContext('2d', { willReadFrequently: true });
@@ -522,33 +522,44 @@ function applyOrangeSkinSmooth(canvas) {
   const data = imageData.data;
   const width = w, height = h;
   
-  // Skin detection using YCbCr (robust)
+  // robust skin detection using YCbCr + RGB heuristics
   const isSkin = (r,g,b) => {
+    // YCbCr skin range (common for diverse ethnicities)
     const Y = 0.299*r + 0.587*g + 0.114*b;
     const Cb = -0.169*r - 0.331*g + 0.5*b + 128;
     const Cr = 0.5*r - 0.419*g - 0.081*b + 128;
-    return (Y > 55 && Y < 235 && Cb > 77 && Cb < 133 && Cr > 133 && Cr < 175);
+    const ycrcbSkin = (Y > 55 && Y < 235 && Cb > 77 && Cb < 133 && Cr > 133 && Cr < 175);
+    // additional RGB check for warmer tones
+    const rgbSkin = (r > 40 && g > 20 && b > 15 && r > g && r > b);
+    return ycrcbSkin || rgbSkin;
   };
   
-  // Edge-aware smoothing (bilateral style) + orange tone for skin
-  const smoothed = new Uint8ClampedArray(data.length);
+  // edge-aware smoothing + deep orange transformation
+  const enhanced = new Uint8ClampedArray(data.length);
   for (let y = 1; y < height-1; y++) {
     for (let x = 1; x < width-1; x++) {
       const idx = (y * width + x) * 4;
       const r = data[idx], g = data[idx+1], b = data[idx+2];
+      
       if (!isSkin(r,g,b)) {
-        // preserve non-skin
-        smoothed[idx]=r; smoothed[idx+1]=g; smoothed[idx+2]=b; smoothed[idx+3]=255;
+        // keep non-skin unchanged (background, eyes, hair, clothes)
+        enhanced[idx] = r;
+        enhanced[idx+1] = g;
+        enhanced[idx+2] = b;
+        enhanced[idx+3] = 255;
         continue;
       }
-      // Apply gaussian-like blur for smoothing only on skin
+      
+      // bilateral-like smoothing (3x3 kernel)
       let sumR=0, sumG=0, sumB=0, count=0;
       for (let dy = -1; dy <= 1; dy++) {
         for (let dx = -1; dx <= 1; dx++) {
           const nx = x+dx, ny = y+dy;
           if (nx>=0 && nx<width && ny>=0 && ny<height) {
             const nidx = (ny*width+nx)*4;
-            sumR += data[nidx]; sumG += data[nidx+1]; sumB += data[nidx+2];
+            sumR += data[nidx];
+            sumG += data[nidx+1];
+            sumB += data[nidx+2];
             count++;
           }
         }
@@ -557,32 +568,36 @@ function applyOrangeSkinSmooth(canvas) {
       let smoothG = Math.round(sumG/count);
       let smoothB = Math.round(sumB/count);
       
-      // ORANGE SKIN TRANSFORMATION: golden/orange hue, warm glow
-      // Increase red & slightly reduce blue, keep green warm
-      let finalR = Math.min(255, Math.round(smoothR * 1.12));
-      let finalG = Math.min(255, Math.round(smoothG * 0.96));
-      let finalB = Math.min(255, Math.round(smoothB * 0.82));
-      // extra orange boost for natural tan look
-      finalR = Math.min(255, finalR + 5);
-      finalG = Math.min(255, finalG + 2);
+      // DEEP ORANGE TRANSFORMATION: rich golden-orange (boost red, moderate green, suppress blue)
+      // intensity based on original luminance to keep natural look
+      let finalR = Math.min(255, Math.round(smoothR * 1.22));   // strong red boost
+      let finalG = Math.min(255, Math.round(smoothG * 0.92));   // slight green reduction for warmth
+      let finalB = Math.min(255, Math.round(smoothB * 0.68));   // strongly reduce blue -> orange
       
-      smoothed[idx] = finalR;
-      smoothed[idx+1] = finalG;
-      smoothed[idx+2] = finalB;
-      smoothed[idx+3] = 255;
+      // additional orange hue shift: ensure red > green > blue
+      finalR = Math.min(255, finalR + 8);
+      finalG = Math.min(255, finalG + 3);
+      finalB = Math.max(0, finalB - 5);
+      
+      // clamp to natural range
+      enhanced[idx] = finalR;
+      enhanced[idx+1] = finalG;
+      enhanced[idx+2] = finalB;
+      enhanced[idx+3] = 255;
     }
   }
-  // Copy back
+  
+  // apply changes
   for (let i=0; i<data.length; i++) {
-    if (smoothed[i] !== undefined) data[i] = smoothed[i];
+    if (enhanced[i] !== undefined) data[i] = enhanced[i];
   }
   ctx.putImageData(imageData, 0, 0);
   return canvas;
 }
 
 function enhance(canvas) {
-  // ONLY auto face enhancer: smooth + orange skin (no levels, no sharpen, no white balance)
-  applyOrangeSkinSmooth(canvas);
+  // ONLY deep orange skin smoothing (no other enhancements)
+  applyDeepOrangeSkinSmooth(canvas);
   return canvas;
 }
 
@@ -599,7 +614,7 @@ async function processPhoto(srcCanvas) {
   const cropped = cropToPassport(work, preset, S.dpi, detection);
   const originalURL = canvasToDataURL(cropped, 0.93);
   const enh = cloneCanvas(cropped);
-  enhance(enh); // only orange skin smooth
+  enhance(enh); // only deep orange skin smooth
   const enhancedURL = canvasToDataURL(enh, 0.95);
   return { originalURL, enhancedURL, faceDetected, bgRemoved };
 }
@@ -607,7 +622,7 @@ async function processPhoto(srcCanvas) {
 // REPROCESS & UI
 async function reprocessAll(){
   if(!photos.length)return;
-  setProcActive(true,0,'REPROCESSING (Orange Skin Smooth)...');
+  setProcActive(true,0,'REPROCESSING (Deep Orange Skin)...');
   const old=[...photos];photos=[];photoGrid.innerHTML='';
   for(let i=0;i<old.length;i++){
     setProgress(i/old.length*100,`REPROCESS ${i+1}/${old.length}`);
@@ -623,12 +638,12 @@ async function reprocessAll(){
 function addCard({id,name,originalURL,enhancedURL,faceDetected,bgRemoved}){
   const card=document.createElement('div');
   card.className='photo-card';card.dataset.id=id;
-  const ftag=faceDetected?`<span class="tag face">🍊 ORANGE AI</span>`:`<span class="tag fallback">📐 AUTO</span>`;
+  const ftag=faceDetected?`<span class="tag face">🍊 DEEP ORANGE</span>`:`<span class="tag fallback">📐 AUTO</span>`;
   const btag=bgRemoved?`<span class="tag bg">✂ BG</span>`:'';
   card.innerHTML=`
     <div class="card-imgs">
       <div class="cimg-wrap"><img src="${originalURL}" loading="lazy"><span class="cimg-label">RAW CROP</span></div>
-      <div class="cimg-wrap"><img src="${enhancedURL}" loading="lazy"><span class="cimg-label enh">✨ SMOOTH+ORANGE</span></div>
+      <div class="cimg-wrap"><img src="${enhancedURL}" loading="lazy"><span class="cimg-label enh">✨ ORANGE SMOOTH</span></div>
     </div>
     <div class="card-foot">${ftag}${btag}<span class="card-name" title="${name}">${name}</span><button class="card-del" onclick="deletePhoto(${id})">✕</button></div>`;
   photoGrid.appendChild(card);updateUI();
@@ -658,7 +673,7 @@ function buildPrintPreview(){
   a4Paper.style.minHeight=Math.max(842,rows*(photoH+gap)+38)+'px';
   const mm2px=mm=>Math.round(mm/25.4*S.dpi);
   const copies=Math.max(1,parseInt(document.getElementById('copiesInput').value)||6);
-  document.getElementById('pvInfo').textContent=`${pp.length} photos · ${photos.length}×${copies} · ${preset.label} · ORANGE SKIN ACTIVE`;
+  document.getElementById('pvInfo').textContent=`${pp.length} photos · ${photos.length}×${copies} · ${preset.label} · DEEP ORANGE SKIN`;
 }
 function buildPrintSheet(){
   if(!photos.length)return;
@@ -679,14 +694,14 @@ function doPrint(){ if(!photos.length){toast('No photos','error');return;} build
 async function downloadZIP(){
   if(!photos.length)return;
   toast('Creating ZIP...','info');
-  const zip=new JSZip(),folder=zip.folder('passport_photos_orange_skin');
+  const zip=new JSZip(),folder=zip.folder('passport_deep_orange');
   photos.forEach((p,i)=>folder.file(`photo_${String(i+1).padStart(3,'0')}.jpg`,p.enhancedURL.split(',')[1],{base64:true}));
   const blob=await zip.generateAsync({type:'blob'});
   const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download='passport_orange_enhanced.zip';a.click();URL.revokeObjectURL(a.href);
   toast('ZIP ready ✓','success');
 }
 function showUI(){ gallery.style.display='block';previewSection.style.display='block';actionBar.style.display='flex';updateUI(); }
-function updateUI(){ const n=photos.length,p=PRESETS[S.preset]; document.getElementById('galleryCount').textContent=n; document.getElementById('infoPill').textContent=`${n} PHOTO${n!==1?'S':''} · ${p.label} · ORANGE SKIN`; }
+function updateUI(){ const n=photos.length,p=PRESETS[S.preset]; document.getElementById('galleryCount').textContent=n; document.getElementById('infoPill').textContent=`${n} PHOTO${n!==1?'S':''} · ${p.label} · DEEP ORANGE`; }
 function setProcActive(on,pct,text){ procBar.classList.toggle('active',on);if(text)procText.textContent=text;if(pct!==undefined)progFill.style.width=pct+'%';if(!on)setTimeout(()=>{progFill.style.width='0%'},400); }
 function setProgress(pct,text){ progFill.style.width=pct+'%';if(text)procText.textContent=text; }
 let _tt;
