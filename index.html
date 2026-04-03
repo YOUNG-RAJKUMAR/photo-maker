@@ -588,19 +588,6 @@ function expandMask(maskCanvas){
 }
 
 
-async function applyBgRemoval(srcCanvas) {
-
-  if (segModel) {
-    try {
-      setProgress(undefined, '✂ REMOVING BG...');
-
-      const ws = downscaleCanvas(srcCanvas, 1536); // better edges
-      const rawMask = await runSegmentation(ws);
-
-      const mc = document.createElement('canvas');
-      mc.width = ws.width;
-      mc.height = ws.height;
-
     async function applyBgRemoval(srcCanvas) {
 
   if (segModel) {
