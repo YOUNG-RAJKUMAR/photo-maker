@@ -452,33 +452,43 @@ async function applyBgRemoval(srcCanvas) {
   if (!segmenter || !S.removeBg) return srcCanvas;
   try {
     setProgress(undefined, '✂ BG REMOVAL...');
-    const ws = downscaleCanvas(srcCanvas, 800);
-    const segmentation = await segmenter.segmentPeople(ws, { flattenMasks: false, internal: { segmentationThreshold: 0.5 } });
+    const ws = downscaleCanvas(srcCanvas, 640);
+    const segmentation = await segmenter.segmentPeople(ws);
     if (!segmentation || segmentation.length === 0) return srcCanvas;
-    let mask = segmentation[0].mask;
-    let maskData = await mask.toImageData();
-    const width = maskData.width, height = maskData.height;
-    const floatMask = new Float32Array(width*height);
-    for (let i=0;i<width*height;i++) floatMask[i] = maskData.data[i*4]/255;
+
+    // toBinaryMask is reliable across all tfjs versions
+    const fgColor = { r:255, g:255, b:255, a:255 };
+    const bgColor = { r:0,   g:0,   b:0,   a:255 };
+    const binaryMask = await bodySegmentation.toBinaryMask(
+      segmentation, fgColor, bgColor, false
+    );
+
+    const width = binaryMask.width, height = binaryMask.height;
+
+    // Get downscaled image pixels
     const tempCanvas = document.createElement('canvas');
     tempCanvas.width = width; tempCanvas.height = height;
     const tempCtx = tempCanvas.getContext('2d');
     tempCtx.drawImage(ws, 0, 0, width, height);
-    const imageData = tempCtx.getImageData(0,0,width,height);
+    const imageData = tempCtx.getImageData(0, 0, width, height);
+
+    // Float mask from binary mask (white=person, black=bg)
+    const floatMask = new Float32Array(width * height);
+    for (let i = 0; i < width * height; i++) {
+      floatMask[i] = binaryMask.data[i * 4] / 255;
+    }
+
     const refinedMask = refineEdges(imageData, floatMask, 2);
     const result = applyAlphaMatting(imageData, refinedMask, S.bg);
-   // Put the processed result back onto tempCanvas
-    tempCtx.putImageData(result, 0, 0);
 
-    // Now scale tempCanvas (downscaled+processed) up to original resolution
+    // Write result back to tempCanvas, then scale up to original size
+    tempCtx.putImageData(result, 0, 0);
     const outputCanvas = document.createElement('canvas');
     outputCanvas.width = srcCanvas.width; outputCanvas.height = srcCanvas.height;
-    const ctx = outputCanvas.getContext('2d');
-    ctx.drawImage(tempCanvas, 0, 0, srcCanvas.width, srcCanvas.height);
+    outputCanvas.getContext('2d').drawImage(tempCanvas, 0, 0, srcCanvas.width, srcCanvas.height);
     return outputCanvas;
-  } catch(e) { console.warn('BG skip',e); return srcCanvas; }
+  } catch(e) { console.warn('BG skip', e); return srcCanvas; }
 }
-
 // FACE DETECTION
 async function detectFace(canvas) {
   if(!blazeModel||!S.faceAlign) return null;
@@ -555,9 +565,10 @@ function applyOrangeSkinSmooth(canvas) {
           }
         }
       }
-      let smoothR = Math.round(sumR/count);
-      let smoothG = Math.round(sumG/count);
-      let smoothB = Math.round(sumB/count);
+   // Blend 25% smoothed + 75% original = subtle, not blurry
+      let smoothR = Math.round(r * 0.75 + (sumR/count) * 0.25);
+      let smoothG = Math.round(g * 0.75 + (sumG/count) * 0.25);
+      let smoothB = Math.round(b * 0.75 + (sumB/count) * 0.25);
 
       // SUBTLE WARM SKIN TONE: very gentle red lift + minor blue reduction
       // Keeps natural look — no orange cast, just a healthy warm glow
