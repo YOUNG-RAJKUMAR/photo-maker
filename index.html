@@ -6,388 +6,183 @@
 <title>StudioSnap — Passport Photo Studio</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+<!-- ✅ BlazeFace via TF.js — models auto-downloaded from tfhub.dev (reliable) -->
+<script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs-core@4.17.0/dist/tf-core.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs-backend-webgl@4.17.0/dist/tf-backend-webgl.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/blazeface@0.0.7/dist/blazeface.min.js"></script>
+<!-- ✅ MediaPipe Selfie Segmentation — for real background color replacement -->
+<script src="https://cdn.jsdelivr.net/npm/@mediapipe/selfie_segmentation@0.1.1675465747/selfie_segmentation.js" crossorigin="anonymous"></script>
 <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Space+Mono:wght@400;700&family=Outfit:wght@300;400;500;600&display=swap" rel="stylesheet">
 <style>
-:root {
-  --bg:      #080809;
-  --panel:   #101013;
-  --card:    #17171b;
-  --border:  #252529;
-  --border2: #333339;
-  --amber:   #e09a2a;
-  --amber-d: rgba(224,154,42,0.10);
-  --red:     #d63031;
-  --green:   #00b894;
-  --blue:    #0984e3;
-  --text:    #ede8e0;
-  --muted:   #66667a;
-  --sub:     #44445a;
-  --ff:      'Bebas Neue', sans-serif;
-  --fm:      'Space Mono', monospace;
-  --fb:      'Outfit', sans-serif;
+:root{
+  --bg:#080809;--panel:#101013;--card:#17171b;--border:#252529;--border2:#333339;
+  --amber:#e09a2a;--amber-d:rgba(224,154,42,0.10);--red:#d63031;--green:#00b894;--blue:#0984e3;
+  --text:#ede8e0;--muted:#66667a;--sub:#44445a;
+  --ff:'Bebas Neue',sans-serif;--fm:'Space Mono',monospace;--fb:'Outfit',sans-serif;
 }
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
 html{scroll-behavior:smooth}
-body{
-  background:var(--bg);color:var(--text);
-  font-family:var(--fb);min-height:100vh;
-  overflow-x:hidden;
-}
-
-
-
-/* ── HEADER ─────────────────────────────────────────── */
-header{
-  position:sticky;top:0;z-index:200;
-  height:58px;padding:0 28px;
-  display:flex;align-items:center;gap:18px;
-  background:rgba(8,8,9,.96);
-  border-bottom:1px solid var(--border);
-  backdrop-filter:blur(12px);
-}
-.logo{
-  font-family:var(--ff);font-size:30px;
-  letter-spacing:3px;color:var(--amber);line-height:1;
-  flex-shrink:0;
-}
+body{background:var(--bg);color:var(--text);font-family:var(--fb);min-height:100vh;overflow-x:hidden}
+header{position:sticky;top:0;z-index:200;height:58px;padding:0 28px;display:flex;align-items:center;gap:18px;background:rgba(8,8,9,.96);border-bottom:1px solid var(--border);backdrop-filter:blur(12px)}
+.logo{font-family:var(--ff);font-size:30px;letter-spacing:3px;color:var(--amber);line-height:1;flex-shrink:0}
 .logo b{color:var(--text)}
-.tagline{
-  font-family:var(--fm);font-size:9px;color:var(--muted);
-  text-transform:uppercase;letter-spacing:.1em;
-  border-left:1px solid var(--border2);padding-left:16px;
-  white-space:nowrap;
-}
-.hdr-right{
-  margin-left:auto;display:flex;align-items:center;gap:10px;flex-wrap:wrap;
-}
-.badge{
-  font-family:var(--fm);font-size:9px;padding:3px 8px;border-radius:3px;
-  border:1px solid var(--border2);color:var(--muted);text-transform:uppercase;letter-spacing:.06em;
-}
+.tagline{font-family:var(--fm);font-size:9px;color:var(--muted);text-transform:uppercase;letter-spacing:.1em;border-left:1px solid var(--border2);padding-left:16px;white-space:nowrap}
+.hdr-right{margin-left:auto;display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.badge{font-family:var(--fm);font-size:9px;padding:3px 8px;border-radius:3px;border:1px solid var(--border2);color:var(--muted);text-transform:uppercase;letter-spacing:.06em;transition:all .4s}
+.badge.ok{border-color:var(--green);color:var(--green)}
+.badge.warn{border-color:var(--amber);color:var(--amber)}
 .badge.live{border-color:var(--green);color:var(--green)}
-
-/* ── SETTINGS BAR ───────────────────────────────────── */
-.settings-bar{
-  background:var(--panel);border-bottom:1px solid var(--border);
-  padding:10px 28px;display:flex;align-items:center;gap:20px;flex-wrap:wrap;
-}
+.settings-bar{background:var(--panel);border-bottom:1px solid var(--border);padding:10px 28px;display:flex;align-items:center;gap:20px;flex-wrap:wrap}
 .sg{display:flex;align-items:center;gap:8px}
-.slabel{
-  font-family:var(--fm);font-size:9px;color:var(--muted);
-  text-transform:uppercase;letter-spacing:.1em;white-space:nowrap;
-}
-select{
-  background:var(--card);border:1px solid var(--border2);color:var(--text);
-  font-family:var(--fm);font-size:11px;padding:5px 10px;border-radius:4px;
-  cursor:pointer;outline:none;transition:border-color .15s;
-}
+.slabel{font-family:var(--fm);font-size:9px;color:var(--muted);text-transform:uppercase;letter-spacing:.1em;white-space:nowrap}
+select{background:var(--card);border:1px solid var(--border2);color:var(--text);font-family:var(--fm);font-size:11px;padding:5px 10px;border-radius:4px;cursor:pointer;outline:none;transition:border-color .15s}
 select:hover,select:focus{border-color:var(--amber)}
 select option{background:var(--card)}
-.tog{
-  padding:4px 10px;font-family:var(--fm);font-size:9px;
-  border-radius:3px;border:1px solid var(--border2);
-  background:var(--card);color:var(--muted);cursor:pointer;
-  transition:all .15s;text-transform:uppercase;letter-spacing:.05em;
-}
+.tog{padding:4px 10px;font-family:var(--fm);font-size:9px;border-radius:3px;border:1px solid var(--border2);background:var(--card);color:var(--muted);cursor:pointer;transition:all .15s;text-transform:uppercase;letter-spacing:.05em}
 .tog.on{background:var(--amber-d);border-color:var(--amber);color:var(--amber)}
 .divider{width:1px;height:20px;background:var(--border2)}
-
-/* ── MAIN ──────────────────────────────────────────── */
 main{max-width:1400px;margin:0 auto;padding:28px}
-
-/* ── UPLOAD ZONE ──────────────────────────────────── */
-.upload-zone{
-  border:2px dashed var(--border2);border-radius:10px;
-  padding:56px 28px;text-align:center;cursor:pointer;
-  background:var(--panel);position:relative;overflow:hidden;
-  margin-bottom:32px;transition:all .2s;
-}
-.upload-zone::before{
-  content:'';position:absolute;inset:0;pointer-events:none;
-  background:radial-gradient(ellipse at 50% -10%,rgba(224,154,42,.07) 0%,transparent 60%);
-}
+.upload-zone{border:2px dashed var(--border2);border-radius:10px;padding:56px 28px;text-align:center;cursor:pointer;background:var(--panel);position:relative;overflow:hidden;margin-bottom:32px;transition:all .2s}
+.upload-zone::before{content:'';position:absolute;inset:0;pointer-events:none;background:radial-gradient(ellipse at 50% -10%,rgba(224,154,42,.07) 0%,transparent 60%)}
 .upload-zone.drag-over{border-color:var(--amber);background:rgba(224,154,42,.04)}
-.upload-zone.drag-over::before{opacity:2}
 .up-icon{font-size:52px;margin-bottom:14px;display:block;line-height:1}
-.up-title{
-  font-family:var(--ff);font-size:30px;letter-spacing:3px;
-  color:var(--text);margin-bottom:6px;
-}
-.up-sub{
-  font-family:var(--fm);font-size:10px;color:var(--muted);
-  text-transform:uppercase;letter-spacing:.12em;margin-bottom:24px;
-}
-.up-formats{
-  display:flex;gap:8px;justify-content:center;flex-wrap:wrap;margin-bottom:20px;
-}
-.fmt-chip{
-  padding:3px 10px;border:1px solid var(--border2);border-radius:20px;
-  font-family:var(--fm);font-size:9px;color:var(--sub);text-transform:uppercase;
-}
-.up-btn{
-  display:inline-flex;align-items:center;gap:8px;
-  padding:11px 28px;background:var(--amber);color:#000;
-  font-family:var(--ff);font-size:17px;letter-spacing:2px;
-  border-radius:5px;border:none;cursor:pointer;transition:opacity .15s;
-}
+.up-title{font-family:var(--ff);font-size:30px;letter-spacing:3px;color:var(--text);margin-bottom:6px}
+.up-sub{font-family:var(--fm);font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.12em;margin-bottom:24px}
+.up-formats{display:flex;gap:8px;justify-content:center;flex-wrap:wrap;margin-bottom:20px}
+.fmt-chip{padding:3px 10px;border:1px solid var(--border2);border-radius:20px;font-family:var(--fm);font-size:9px;color:var(--sub);text-transform:uppercase}
+.up-btn{display:inline-flex;align-items:center;gap:8px;padding:11px 28px;background:var(--amber);color:#000;font-family:var(--ff);font-size:17px;letter-spacing:2px;border-radius:5px;border:none;cursor:pointer;transition:opacity .15s}
 .up-btn:hover{opacity:.85}
 #fileInput{display:none}
-
-/* Processing bar */
 .proc-bar{display:none;margin-top:24px}
 .proc-bar.active{display:block}
-.proc-text{
-  font-family:var(--fm);font-size:10px;color:var(--amber);
-  text-transform:uppercase;letter-spacing:.1em;margin-bottom:8px;
-}
-.prog-track{
-  width:100%;max-width:320px;height:2px;background:var(--border);
-  margin:0 auto;border-radius:1px;overflow:hidden;
-}
-.prog-fill{
-  height:100%;background:var(--amber);width:0%;
-  transition:width .25s;border-radius:1px;
-}
-
-/* ── SECTION HEADING ──────────────────────────────── */
-.sh{
-  font-family:var(--fm);font-size:9px;color:var(--muted);
-  text-transform:uppercase;letter-spacing:.14em;
-  margin-bottom:16px;display:flex;align-items:center;gap:10px;
-}
+.proc-text{font-family:var(--fm);font-size:10px;color:var(--amber);text-transform:uppercase;letter-spacing:.1em;margin-bottom:8px}
+.prog-track{width:100%;max-width:320px;height:2px;background:var(--border);margin:0 auto;border-radius:1px;overflow:hidden}
+.prog-fill{height:100%;background:var(--amber);width:0%;transition:width .25s;border-radius:1px}
+.sh{font-family:var(--fm);font-size:9px;color:var(--muted);text-transform:uppercase;letter-spacing:.14em;margin-bottom:16px;display:flex;align-items:center;gap:10px}
 .sh::after{content:'';flex:1;height:1px;background:var(--border)}
 .sh em{color:var(--text);font-style:normal}
-
-/* ── GALLERY ────────────────────────────────────────── */
 #gallery{display:none;margin-bottom:32px}
-.photo-grid{
-  display:grid;
-  grid-template-columns:repeat(auto-fill,minmax(220px,1fr));
-  gap:14px;
-}
-.photo-card{
-  background:var(--card);border:1px solid var(--border);
-  border-radius:7px;overflow:hidden;
-  animation:cardIn .3s ease both;
-  transition:border-color .15s;
-}
+.photo-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:14px}
+.photo-card{background:var(--card);border:1px solid var(--border);border-radius:7px;overflow:hidden;animation:cardIn .3s ease both;transition:border-color .15s}
 .photo-card:hover{border-color:var(--border2)}
-@keyframes cardIn{
-  from{opacity:0;transform:translateY(10px) scale(.98)}
-  to  {opacity:1;transform:translateY(0)   scale(1)}
-}
+@keyframes cardIn{from{opacity:0;transform:translateY(10px) scale(.98)}to{opacity:1;transform:translateY(0) scale(1)}}
 .card-imgs{display:grid;grid-template-columns:1fr 1fr}
-.cimg-wrap{
-  position:relative;background:#000;overflow:hidden;
-  aspect-ratio:35/45;
-}
+.cimg-wrap{position:relative;background:#000;overflow:hidden;aspect-ratio:35/45}
 .cimg-wrap img{width:100%;height:100%;object-fit:cover;display:block}
-.cimg-label{
-  position:absolute;bottom:4px;left:4px;
-  font-family:var(--fm);font-size:7px;text-transform:uppercase;
-  letter-spacing:.04em;padding:2px 5px;border-radius:2px;
-  background:rgba(0,0,0,.75);color:var(--muted);
-}
+.cimg-label{position:absolute;bottom:4px;left:4px;font-family:var(--fm);font-size:7px;text-transform:uppercase;letter-spacing:.04em;padding:2px 5px;border-radius:2px;background:rgba(0,0,0,.75);color:var(--muted)}
 .cimg-label.enh{color:var(--amber)}
-.card-foot{
-  padding:9px 12px;display:flex;align-items:center;gap:8px;
-  border-top:1px solid var(--border);
-}
-.card-name{
-  flex:1;font-family:var(--fm);font-size:9px;color:var(--muted);
-  overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
-}
-.card-del{
-  background:none;border:none;color:var(--sub);cursor:pointer;
-  font-size:12px;padding:2px 4px;border-radius:3px;
-  transition:color .15s;line-height:1;
-}
+.card-foot{padding:9px 12px;display:flex;align-items:center;gap:5px;border-top:1px solid var(--border);flex-wrap:wrap}
+.card-name{flex:1;font-family:var(--fm);font-size:9px;color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0}
+.tag{font-family:var(--fm);font-size:7px;text-transform:uppercase;letter-spacing:.04em;padding:2px 5px;border-radius:2px;border:1px solid transparent;flex-shrink:0}
+.tag.face{border-color:var(--green);color:var(--green)}
+.tag.fallback{border-color:var(--amber);color:var(--amber)}
+.tag.bg{border-color:var(--blue);color:var(--blue)}
+.card-del{background:none;border:none;color:var(--sub);cursor:pointer;font-size:12px;padding:2px 4px;border-radius:3px;transition:color .15s;line-height:1;flex-shrink:0}
 .card-del:hover{color:var(--red)}
-
-/* ── PRINT PREVIEW ──────────────────────────────────── */
 #previewSection{display:none;margin-bottom:32px}
-.preview-outer{
-  background:var(--panel);border:1px solid var(--border);
-  border-radius:8px;padding:20px;overflow:auto;
-}
-.a4-paper{
-  background:#fff;width:595px;
-  margin:0 auto;padding:19px;
-  display:flex;flex-wrap:wrap;gap:7px;
-  align-content:flex-start;
-  box-shadow:0 4px 40px rgba(0,0,0,.6),0 0 0 1px rgba(255,255,255,.05);
-  min-height:842px;
-}
+.preview-outer{background:var(--panel);border:1px solid var(--border);border-radius:8px;padding:20px;overflow:auto}
+.a4-paper{background:#fff;width:595px;margin:0 auto;padding:19px;display:flex;flex-wrap:wrap;gap:7px;align-content:flex-start;box-shadow:0 4px 40px rgba(0,0,0,.6),0 0 0 1px rgba(255,255,255,.05);min-height:842px}
 .pv-photo{display:block;object-fit:cover;flex-shrink:0}
-.preview-hint{
-  font-family:var(--fm);font-size:9px;color:var(--muted);
-  text-align:center;margin-top:10px;text-transform:uppercase;letter-spacing:.08em;
-}
-
-/* ── ACTION BAR ─────────────────────────────────────── */
-#actionBar{
-  display:none;align-items:center;gap:12px;
-  padding:20px 0;border-top:1px solid var(--border);flex-wrap:wrap;
-}
-.btn{
-  padding:11px 22px;font-family:var(--ff);font-size:17px;
-  letter-spacing:2px;border-radius:5px;border:none;cursor:pointer;
-  transition:all .15s;display:flex;align-items:center;gap:8px;
-}
+.preview-hint{font-family:var(--fm);font-size:9px;color:var(--muted);text-align:center;margin-top:10px;text-transform:uppercase;letter-spacing:.08em}
+#actionBar{display:none;align-items:center;gap:12px;padding:20px 0;border-top:1px solid var(--border);flex-wrap:wrap}
+.btn{padding:11px 22px;font-family:var(--ff);font-size:17px;letter-spacing:2px;border-radius:5px;border:none;cursor:pointer;transition:all .15s;display:flex;align-items:center;gap:8px}
 .btn-ghost{background:var(--card);border:1px solid var(--border2);color:var(--muted)}
-.btn-ghost:hover{color:var(--text);border-color:var(--border2)}
+.btn-ghost:hover{color:var(--text)}
 .btn-zip{background:var(--card);border:1px solid var(--border2);color:var(--text)}
 .btn-zip:hover{border-color:var(--green);color:var(--green)}
-.btn-pdf{background:var(--card);border:1px solid var(--border2);color:var(--text)}
-.btn-pdf:hover{border-color:var(--blue);color:var(--blue)}
-.btn-print{
-  background:var(--red);color:#fff;
-  box-shadow:0 0 20px rgba(214,48,49,.25);
-}
-.btn-print:hover{opacity:.9;box-shadow:0 0 30px rgba(214,48,49,.45)}
-.info-pill{
-  margin-left:auto;font-family:var(--fm);font-size:9px;
-  color:var(--muted);text-transform:uppercase;letter-spacing:.08em;
-  padding:5px 12px;border:1px solid var(--border);border-radius:20px;
-}
-
-/* ── PRINT SHEET (print only) ───────────────────────── */
+.btn-print{background:var(--red);color:#fff;box-shadow:0 0 20px rgba(214,48,49,.25)}
+.btn-print:hover{opacity:.9}
+.info-pill{margin-left:auto;font-family:var(--fm);font-size:9px;color:var(--muted);text-transform:uppercase;letter-spacing:.08em;padding:5px 12px;border:1px solid var(--border);border-radius:20px}
 #printSheet{display:none}
 @media print{
   body>*:not(#printSheet){display:none!important}
   #printSheet{display:block!important}
-  .print-page{
-    width:210mm;min-height:297mm;padding:5mm;
-    display:flex;flex-wrap:wrap;align-content:flex-start;
-    background:#fff;page-break-after:always;
-  }
+  .print-page{width:210mm;min-height:297mm;padding:5mm;display:flex;flex-wrap:wrap;align-content:flex-start;background:#fff;page-break-after:always}
   .print-photo{display:block;object-fit:cover;flex-shrink:0}
   @page{size:A4;margin:0}
   *{-webkit-print-color-adjust:exact;print-color-adjust:exact}
 }
-
-/* ── TOAST ──────────────────────────────────────────── */
-#toast{
-  position:fixed;bottom:24px;right:24px;z-index:9998;
-  background:var(--card);border:1px solid var(--border2);
-  border-radius:6px;padding:10px 18px;
-  font-family:var(--fm);font-size:10px;color:var(--text);
-  text-transform:uppercase;letter-spacing:.06em;
-  transform:translateY(16px);opacity:0;
-  transition:all .22s;pointer-events:none;
-}
+#toast{position:fixed;bottom:24px;right:24px;z-index:9998;background:var(--card);border:1px solid var(--border2);border-radius:6px;padding:10px 18px;font-family:var(--fm);font-size:10px;color:var(--text);text-transform:uppercase;letter-spacing:.06em;transform:translateY(16px);opacity:0;transition:all .22s;pointer-events:none}
 #toast.show{transform:translateY(0);opacity:1}
 #toast.success{border-color:var(--green);color:var(--green)}
-#toast.error  {border-color:var(--red);  color:var(--red)}
-#toast.info   {border-color:var(--amber);color:var(--amber)}
-
-/* ── SCROLLBAR ──────────────────────────────────────── */
+#toast.error{border-color:var(--red);color:var(--red)}
+#toast.info{border-color:var(--amber);color:var(--amber)}
 ::-webkit-scrollbar{width:5px;height:5px}
 ::-webkit-scrollbar-track{background:var(--bg)}
 ::-webkit-scrollbar-thumb{background:var(--border2);border-radius:3px}
 ::-webkit-scrollbar-thumb:hover{background:var(--muted)}
-
-/* ── RESPONSIVE ─────────────────────────────────────── */
-@media(max-width:600px){
-  header{padding:0 16px}
-  .tagline{display:none}
-  .settings-bar{padding:10px 16px}
-  main{padding:16px}
-  .upload-zone{padding:36px 16px}
-}
+@media(max-width:600px){header{padding:0 16px}.tagline{display:none}.settings-bar{padding:10px 16px}main{padding:16px}.upload-zone{padding:36px 16px}}
 </style>
 </head>
 <body>
-
 <input type="file" id="fileInput" multiple accept=".jpg,.jpeg,.png,.pdf,.webp">
 
-<!-- HEADER -->
 <header>
   <div class="logo">STUDIO<b>SNAP</b></div>
-  <div class="tagline">Passport Photo Studio · 100% Client-Side · Free Forever</div>
+  <div class="tagline">Passport Photo Studio · Face AI + BG Removal · Free Forever</div>
   <div class="hdr-right">
     <span class="badge live">● OFFLINE READY</span>
-    <span class="badge">0 COST</span>
+    <span class="badge warn" id="badgeFace">⏳ FACE AI...</span>
+    <span class="badge warn" id="badgeBg">⏳ BG SEGM...</span>
   </div>
 </header>
 
-<!-- SETTINGS BAR -->
 <div class="settings-bar">
-
-  <div class="sg">
-    <span class="slabel">Preset</span>
-    <select id="presetSel"></select>
-  </div>
-
+  <div class="sg"><span class="slabel">Preset</span><select id="presetSel"></select></div>
   <div class="divider"></div>
-
   <div class="sg">
     <span class="slabel">Enhance</span>
     <button class="tog on" data-key="autoLevels">Auto Levels</button>
     <button class="tog on" data-key="whiteBalance">White Balance</button>
     <button class="tog on" data-key="sharpen">Sharpen</button>
     <button class="tog on" data-key="brighten">Brighten</button>
+    <button class="tog on" data-key="skinSmooth">Skin Smooth</button>
   </div>
-
   <div class="divider"></div>
-
   <div class="sg">
-    <span class="slabel">Layout</span>
+    <span class="slabel">AI</span>
+    <button class="tog on" data-key="faceAlign">Face Align</button>
+    <button class="tog on" data-key="removeBg">Remove BG</button>
+  </div>
+  <div class="divider"></div>
+  <div class="sg"><span class="slabel">Layout</span>
     <select id="colsSel">
-      <option value="2">2 / row</option>
-      <option value="3">3 / row</option>
-      <option value="4" selected>4 / row</option>
-      <option value="5">5 / row</option>
-      <option value="6">6 / row</option>
+      <option value="2">2 / row</option><option value="3">3 / row</option>
+      <option value="4" selected>4 / row</option><option value="5">5 / row</option><option value="6">6 / row</option>
     </select>
   </div>
-
-  <div class="sg">
-    <span class="slabel">Quality</span>
+  <div class="sg"><span class="slabel">Quality</span>
     <select id="dpiSel">
       <option value="300" selected>300 DPI (Print)</option>
       <option value="150">150 DPI (Draft)</option>
     </select>
   </div>
-
-  <div class="sg">
-    <span class="slabel">BG Color</span>
+  <div class="sg"><span class="slabel">BG Color</span>
     <select id="bgSel">
       <option value="#ffffff">White</option>
       <option value="#f5f0e8">Cream</option>
-      <option value="#e8f0fe">Light Blue</option>
-      <option value="#e8fee8">Light Green</option>
+      <option value="#d6e4f7">Light Blue</option>
+      <option value="#d4f0d4">Light Green</option>
+      <option value="#f0e6d3">Warm Beige</option>
     </select>
   </div>
-
   <div class="divider"></div>
-
   <div class="sg">
     <span class="slabel">🖨 Copies</span>
-    <input type="number" id="copiesInput" min="1" max="200" value="1"
-      title="Number of copies of each photo on the print sheet"
-      style="width:66px;background:var(--card);border:1px solid var(--amber);
-      color:var(--amber);font-family:var(--fm);font-size:13px;font-weight:700;
-      padding:5px 8px;border-radius:4px;outline:none;text-align:center;cursor:pointer">
+    <input type="number" id="copiesInput" min="1" max="200" value="6"
+      style="width:66px;background:var(--card);border:1px solid var(--amber);color:var(--amber);font-family:var(--fm);font-size:13px;font-weight:700;padding:5px 8px;border-radius:4px;outline:none;text-align:center;cursor:pointer">
     <span class="slabel">per photo</span>
   </div>
-
 </div>
 
-<!-- MAIN -->
 <main>
-
-  <!-- UPLOAD ZONE -->
   <div class="upload-zone" id="uploadZone">
     <span class="up-icon">📷</span>
     <div class="up-title">DROP PHOTOS HERE</div>
-    <div class="up-sub">Click anywhere or drag & drop multiple files</div>
+    <div class="up-sub">Auto face AI · Real background removal · High quality enhancement</div>
     <div class="up-formats">
-      <span class="fmt-chip">JPG</span>
-      <span class="fmt-chip">PNG</span>
-      <span class="fmt-chip">WEBP</span>
-      <span class="fmt-chip">PDF</span>
-      <span class="fmt-chip">Bulk Upload</span>
+      <span class="fmt-chip">JPG</span><span class="fmt-chip">PNG</span>
+      <span class="fmt-chip">WEBP</span><span class="fmt-chip">PDF</span><span class="fmt-chip">Bulk</span>
     </div>
     <button class="up-btn" onclick="document.getElementById('fileInput').click()">📁 SELECT FILES</button>
     <div class="proc-bar" id="procBar">
@@ -396,43 +191,94 @@ main{max-width:1400px;margin:0 auto;padding:28px}
     </div>
   </div>
 
-  <!-- GALLERY -->
   <div id="gallery">
     <div class="sh">PROCESSED PHOTOS &nbsp;<em id="galleryCount">0</em></div>
     <div class="photo-grid" id="photoGrid"></div>
   </div>
 
-  <!-- PRINT PREVIEW -->
   <div id="previewSection">
     <div class="sh">A4 PRINT PREVIEW — <em id="pvInfo"></em></div>
     <div class="preview-outer">
       <div class="a4-paper" id="a4Paper"></div>
-      <div class="preview-hint">↑ Actual print layout at correct proportions · Browser will handle DPI scaling</div>
+      <div class="preview-hint">↑ Actual print layout at correct proportions · Browser handles DPI</div>
     </div>
   </div>
 
-  <!-- ACTION BAR -->
   <div id="actionBar">
     <button class="btn btn-ghost" onclick="clearAll()">✕ CLEAR ALL</button>
-    <button class="btn btn-zip"   onclick="downloadZIP()">⬇ ZIP</button>
+    <button class="btn btn-zip" onclick="downloadZIP()">⬇ ZIP</button>
     <button class="btn btn-print" onclick="doPrint()">🖨 PRINT</button>
     <span class="info-pill" id="infoPill"></span>
   </div>
-
 </main>
 
-<!-- PRINT SHEET (hidden, used only at print time) -->
 <div id="printSheet"></div>
-
-<!-- TOAST -->
 <div id="toast"></div>
 
 <script>
-// ── PDF.js ───────────────────────────────────────────────────────────────────
+// ══════════════════════════════════════════════════════════════
+// PDF.js worker
+// ══════════════════════════════════════════════════════════════
 pdfjsLib.GlobalWorkerOptions.workerSrc =
   'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
 
-// ── PRESETS ──────────────────────────────────────────────────────────────────
+// ══════════════════════════════════════════════════════════════
+// AI MODELS
+// ══════════════════════════════════════════════════════════════
+let blazeModel = null;  // BlazeFace face detector
+let segModel   = null;  // MediaPipe Selfie Segmentation
+
+// Load BlazeFace — TF.js downloads its own model from tfhub.dev automatically
+async function loadBlazeFace() {
+  try {
+    await tf.setBackend('webgl');
+    await tf.ready();
+    blazeModel = await blazeface.load();
+    setBadge('badgeFace', '✓ FACE AI', 'ok');
+    console.log('BlazeFace ready');
+  } catch(e) {
+    setBadge('badgeFace', '⚠ SMART CROP', 'warn');
+    console.warn('BlazeFace failed, fallback crop active:', e.message);
+  }
+}
+
+// Load MediaPipe Selfie Segmentation — warm up with tiny canvas
+async function loadSegmentation() {
+  try {
+    const seg = new SelfieSegmentation({
+      locateFile: f => `https://cdn.jsdelivr.net/npm/@mediapipe/selfie_segmentation@0.1.1675465747/${f}`
+    });
+    seg.setOptions({ modelSelection: 1 }); // 1 = landscape model (more accurate)
+
+    await new Promise((resolve, reject) => {
+      const t = setTimeout(() => reject(new Error('timeout')), 25000);
+      seg.onResults(() => { clearTimeout(t); resolve(); });
+      const tmp = document.createElement('canvas');
+      tmp.width = 64; tmp.height = 64;
+      seg.send({ image: tmp }).catch(reject);
+    });
+
+    segModel = seg;
+    setBadge('badgeBg', '✓ BG REMOVE', 'ok');
+    console.log('Selfie segmentation ready');
+  } catch(e) {
+    setBadge('badgeBg', '⚠ BG FILL', 'warn');
+    console.warn('Segmentation unavailable:', e.message);
+  }
+}
+
+function setBadge(id, text, cls) {
+  const b = document.getElementById(id);
+  b.textContent = text; b.className = 'badge ' + cls;
+}
+
+// Start both in parallel
+loadBlazeFace();
+loadSegmentation();
+
+// ══════════════════════════════════════════════════════════════
+// PRESETS
+// ══════════════════════════════════════════════════════════════
 const PRESETS = {
   nepal:      { w:35, h:45, label:'🇳🇵 Nepal (35×45mm)' },
   india:      { w:35, h:45, label:'🇮🇳 India (35×45mm)' },
@@ -450,20 +296,19 @@ const PRESETS = {
   custom:     { w:50, h:50, label:'✏️ Custom 50×50mm' },
 };
 
-// ── STATE ────────────────────────────────────────────────────────────────────
-let photos = [];  // { id, name, sourceURL, originalURL, enhancedURL }
+// ══════════════════════════════════════════════════════════════
+// STATE
+// ══════════════════════════════════════════════════════════════
+let photos = [];
 const S = {
-  preset: 'nepal',
-  autoLevels: true,
-  whiteBalance: true,
-  sharpen: true,
-  brighten: true,
-  cols: 4,
-  dpi: 300,
-  bg: '#ffffff',
+  preset:'nepal', autoLevels:true, whiteBalance:true, sharpen:true,
+  brighten:true, skinSmooth:true, faceAlign:true, removeBg:true,
+  cols:4, dpi:300, bg:'#ffffff',
 };
 
-// ── DOM REFS ─────────────────────────────────────────────────────────────────
+// ══════════════════════════════════════════════════════════════
+// DOM REFS
+// ══════════════════════════════════════════════════════════════
 const uploadZone    = document.getElementById('uploadZone');
 const fileInput     = document.getElementById('fileInput');
 const photoGrid     = document.getElementById('photoGrid');
@@ -476,455 +321,406 @@ const procBar       = document.getElementById('procBar');
 const procText      = document.getElementById('procText');
 const progFill      = document.getElementById('progFill');
 
-// ── INIT PRESET SELECT ───────────────────────────────────────────────────────
+// ══════════════════════════════════════════════════════════════
+// INIT CONTROLS
+// ══════════════════════════════════════════════════════════════
 const presetSel = document.getElementById('presetSel');
-for (const [key, p] of Object.entries(PRESETS)) {
+for(const [k,p] of Object.entries(PRESETS)){
   const o = document.createElement('option');
-  o.value = key; o.textContent = p.label;
+  o.value = k; o.textContent = p.label;
   presetSel.appendChild(o);
 }
 presetSel.value = 'nepal';
 presetSel.addEventListener('change', () => { S.preset = presetSel.value; reprocessAll(); });
-document.getElementById('colsSel').addEventListener('change', e => {
-  S.cols = +e.target.value; buildPrintPreview(); buildPrintSheet();
-});
-document.getElementById('dpiSel').addEventListener('change', e => {
-  S.dpi = +e.target.value; reprocessAll();
-});
-document.getElementById('bgSel').addEventListener('change', e => {
-  S.bg = e.target.value; reprocessAll();
-});
-document.getElementById('copiesInput').addEventListener('input', () => {
-  buildPrintPreview(); buildPrintSheet();
-});
-
-// Toggle buttons
+document.getElementById('colsSel').addEventListener('change', e => { S.cols=+e.target.value; buildPrintPreview(); buildPrintSheet(); });
+document.getElementById('dpiSel').addEventListener('change', e => { S.dpi=+e.target.value; reprocessAll(); });
+document.getElementById('bgSel').addEventListener('change', e => { S.bg=e.target.value; reprocessAll(); });
+document.getElementById('copiesInput').addEventListener('input', () => { buildPrintPreview(); buildPrintSheet(); });
 document.querySelectorAll('.tog').forEach(btn => {
   btn.addEventListener('click', () => {
-    const k = btn.dataset.key;
-    S[k] = !S[k];
-    btn.classList.toggle('on', S[k]);
-    reprocessAll();
+    const k=btn.dataset.key; S[k]=!S[k];
+    btn.classList.toggle('on',S[k]); reprocessAll();
   });
 });
 
-// ── DRAG & DROP ──────────────────────────────────────────────────────────────
-uploadZone.addEventListener('click', e => {
-  if (!e.target.classList.contains('up-btn')) fileInput.click();
-});
-uploadZone.addEventListener('dragover', e => {
-  e.preventDefault(); uploadZone.classList.add('drag-over');
-});
+// Drag & Drop
+uploadZone.addEventListener('click', e => { if(!e.target.classList.contains('up-btn')) fileInput.click(); });
+uploadZone.addEventListener('dragover', e => { e.preventDefault(); uploadZone.classList.add('drag-over'); });
 uploadZone.addEventListener('dragleave', () => uploadZone.classList.remove('drag-over'));
-uploadZone.addEventListener('drop', e => {
-  e.preventDefault(); uploadZone.classList.remove('drag-over');
-  handleFiles(Array.from(e.dataTransfer.files));
-});
-fileInput.addEventListener('change', e => {
-  handleFiles(Array.from(e.target.files)); fileInput.value = '';
-});
+uploadZone.addEventListener('drop', e => { e.preventDefault(); uploadZone.classList.remove('drag-over'); handleFiles(Array.from(e.dataTransfer.files)); });
+fileInput.addEventListener('change', e => { handleFiles(Array.from(e.target.files)); fileInput.value=''; });
 
-// ── HANDLE FILES ─────────────────────────────────────────────────────────────
+// ══════════════════════════════════════════════════════════════
+// FILE HANDLING
+// ══════════════════════════════════════════════════════════════
 async function handleFiles(files) {
-  const valid = files.filter(f =>
-    f.type.startsWith('image/') || f.type === 'application/pdf'
-  );
-  if (!valid.length) { toast('No supported files (JPG, PNG, WEBP, PDF)', 'error'); return; }
+  const valid = files.filter(f => f.type.startsWith('image/') || f.type==='application/pdf');
+  if(!valid.length){ toast('No supported files','error'); return; }
+  setProcActive(true,0,`LOADING ${valid.length} FILE${valid.length>1?'S':''}...`);
 
-  setProcActive(true, 0, `LOADING ${valid.length} FILE${valid.length > 1 ? 'S' : ''}...`);
-
-  for (let i = 0; i < valid.length; i++) {
-    const f = valid[i];
-    setProgress(i / valid.length * 90, `${i+1}/${valid.length} · ${f.name}`);
+  for(let i=0;i<valid.length;i++){
+    const f=valid[i];
+    setProgress(i/valid.length*88, `${i+1}/${valid.length} · ${f.name}`);
     try {
-      let src;
-      if (f.type === 'application/pdf') src = await renderPDF(f);
-      else src = await loadImageCanvas(f);
-
-      const sourceURL = canvasToDataURL(src, 0.88);
-      const { originalURL, enhancedURL } = processPhoto(src);
+      const src = f.type==='application/pdf' ? await renderPDF(f) : await loadImageCanvas(f);
+      const sourceURL = canvasToDataURL(src, 0.92);
+      const { originalURL, enhancedURL, faceDetected, bgRemoved } = await processPhoto(src);
       const id = Date.now() + Math.random();
-      const photo = { id, name: f.name, sourceURL, originalURL, enhancedURL };
-      photos.push(photo);
-      addCard(photo);
-    } catch (err) {
+      photos.push({ id, name:f.name, sourceURL, originalURL, enhancedURL, faceDetected, bgRemoved });
+      addCard(photos[photos.length-1]);
+    } catch(err) {
       console.error(f.name, err);
-      toast('Error: ' + f.name, 'error');
+      toast('Error: '+f.name, 'error');
     }
   }
-
-  setProgress(100, 'DONE!');
-  setTimeout(() => setProcActive(false), 500);
-  showUI();
-  buildPrintPreview();
-  buildPrintSheet();
-  toast(`${valid.length} photo${valid.length !== 1 ? 's' : ''} ready ✓`, 'success');
+  setProgress(100,'DONE!');
+  setTimeout(()=>setProcActive(false),500);
+  showUI(); buildPrintPreview(); buildPrintSheet();
+  toast(`${valid.length} photo${valid.length!==1?'s':''} ready ✓`,'success');
 }
 
-// ── IMAGE LOADERS ────────────────────────────────────────────────────────────
+// ══════════════════════════════════════════════════════════════
+// LOADERS
+// ══════════════════════════════════════════════════════════════
 function loadImageCanvas(file) {
-  return new Promise((res, rej) => {
-    const img = new Image();
-    const url = URL.createObjectURL(file);
-    img.onload = () => {
-      const c = document.createElement('canvas');
-      c.width = img.naturalWidth; c.height = img.naturalHeight;
-      c.getContext('2d').drawImage(img, 0, 0);
-      URL.revokeObjectURL(url); res(c);
-    };
-    img.onerror = rej; img.src = url;
+  return new Promise((res,rej) => {
+    const img=new Image(), url=URL.createObjectURL(file);
+    img.onload=()=>{ const c=document.createElement('canvas'); c.width=img.naturalWidth; c.height=img.naturalHeight; c.getContext('2d').drawImage(img,0,0); URL.revokeObjectURL(url); res(c); };
+    img.onerror=rej; img.src=url;
   });
 }
-
 async function renderPDF(file) {
-  const ab = await file.arrayBuffer();
-  const pdf = await pdfjsLib.getDocument({ data: ab }).promise;
-  const page = await pdf.getPage(1);
-  const vp = page.getViewport({ scale: 2.5 });
-  const c = document.createElement('canvas');
-  c.width = vp.width; c.height = vp.height;
-  await page.render({ canvasContext: c.getContext('2d'), viewport: vp }).promise;
+  const ab=await file.arrayBuffer();
+  const pdf=await pdfjsLib.getDocument({data:ab}).promise;
+  const page=await pdf.getPage(1);
+  const vp=page.getViewport({scale:2.5});
+  const c=document.createElement('canvas'); c.width=vp.width; c.height=vp.height;
+  await page.render({canvasContext:c.getContext('2d'),viewport:vp}).promise;
   return c;
 }
-
 function dataURLtoCanvas(url) {
-  return new Promise(res => {
-    const img = new Image();
-    img.onload = () => {
-      const c = document.createElement('canvas');
-      c.width = img.width; c.height = img.height;
-      c.getContext('2d').drawImage(img, 0, 0);
-      res(c);
-    };
-    img.src = url;
+  return new Promise(res=>{ const img=new Image(); img.onload=()=>{ const c=document.createElement('canvas'); c.width=img.width; c.height=img.height; c.getContext('2d').drawImage(img,0,0); res(c); }; img.src=url; });
+}
+function canvasToDataURL(c,q=0.95){ return c.toDataURL('image/jpeg',q); }
+function cloneCanvas(s){ const c=document.createElement('canvas'); c.width=s.width; c.height=s.height; c.getContext('2d').drawImage(s,0,0); return c; }
+function hexToRgb(hex){ return { r:parseInt(hex.slice(1,3),16), g:parseInt(hex.slice(3,5),16), b:parseInt(hex.slice(5,7),16) }; }
+
+// ══════════════════════════════════════════════════════════════
+// BACKGROUND REMOVAL — MediaPipe Selfie Segmentation
+// Replaces photo background with S.bg color using soft blend
+// ══════════════════════════════════════════════════════════════
+function runSegmentation(canvas) {
+  return new Promise((resolve,reject) => {
+    const t=setTimeout(()=>reject(new Error('seg timeout')),20000);
+    segModel.onResults(r=>{ clearTimeout(t); resolve(r.segmentationMask); });
+    segModel.send({image:canvas}).catch(reject);
   });
 }
 
-function canvasToDataURL(c, q=0.92) {
-  return c.toDataURL('image/jpeg', q);
+async function applyBgRemoval(srcCanvas) {
+  // Downscale for faster segmentation (model doesn't need full resolution)
+  const MAX=1024;
+  let ws=srcCanvas;
+  if(srcCanvas.width>MAX||srcCanvas.height>MAX){
+    const sc=MAX/Math.max(srcCanvas.width,srcCanvas.height);
+    ws=document.createElement('canvas');
+    ws.width=Math.round(srcCanvas.width*sc); ws.height=Math.round(srcCanvas.height*sc);
+    ws.getContext('2d').drawImage(srcCanvas,0,0,ws.width,ws.height);
+  }
+
+  const mask=await runSegmentation(ws); // ImageBitmap: white=person, black=bg
+
+  // Read mask pixels
+  const mc=document.createElement('canvas'); mc.width=ws.width; mc.height=ws.height;
+  mc.getContext('2d').drawImage(mask,0,0,ws.width,ws.height);
+  const maskPx=mc.getContext('2d').getImageData(0,0,ws.width,ws.height).data;
+  const srcPx =ws.getContext('2d').getImageData(0,0,ws.width,ws.height).data;
+
+  const bg=hexToRgb(S.bg);
+  const outC=document.createElement('canvas'); outC.width=ws.width; outC.height=ws.height;
+  const outCtx=outC.getContext('2d');
+  const outImg=outCtx.createImageData(ws.width,ws.height);
+  const outPx=outImg.data;
+
+  for(let i=0;i<srcPx.length;i+=4){
+    // maskPx[i] = R channel: 255=person, 0=background (soft gradient at edges)
+    const a=maskPx[i]/255; // 0..1
+    outPx[i]  =Math.round(srcPx[i]  *a + bg.r*(1-a));
+    outPx[i+1]=Math.round(srcPx[i+1]*a + bg.g*(1-a));
+    outPx[i+2]=Math.round(srcPx[i+2]*a + bg.b*(1-a));
+    outPx[i+3]=255;
+  }
+  outCtx.putImageData(outImg,0,0);
+
+  // Scale back to original resolution
+  if(ws!==srcCanvas){
+    const fc=document.createElement('canvas'); fc.width=srcCanvas.width; fc.height=srcCanvas.height;
+    fc.getContext('2d').drawImage(outC,0,0,srcCanvas.width,srcCanvas.height);
+    return fc;
+  }
+  return outC;
 }
 
-// ── PROCESS PHOTO ─────────────────────────────────────────────────────────────
-function processPhoto(srcCanvas) {
-  const preset = PRESETS[S.preset];
-  // Crop/resize first
-  const cropped = cropToPassport(srcCanvas, preset, S.dpi);
-  const originalURL = canvasToDataURL(cropped, 0.92);
-  // Enhance a copy
-  const enh = cloneCanvas(cropped);
-  enhance(enh);
-  const enhancedURL = canvasToDataURL(enh, 0.92);
-  return { originalURL, enhancedURL };
+// ══════════════════════════════════════════════════════════════
+// FACE DETECTION — BlazeFace
+// landmarks: [rightEye, leftEye, nose, mouth, rightEar, leftEar]
+// ══════════════════════════════════════════════════════════════
+async function detectFace(canvas) {
+  if(!blazeModel||!S.faceAlign) return null;
+  try {
+    const preds=await blazeModel.estimateFaces(canvas,false);
+    if(!preds.length) return null;
+    return preds.reduce((a,b)=>a.probability[0]>b.probability[0]?a:b);
+  } catch(e){ console.warn('BlazeFace err:',e.message); return null; }
 }
 
-function cloneCanvas(src) {
-  const c = document.createElement('canvas');
-  c.width = src.width; c.height = src.height;
-  c.getContext('2d').drawImage(src, 0, 0);
-  return c;
-}
+// ══════════════════════════════════════════════════════════════
+// CROP TO PASSPORT (with face alignment)
+// ══════════════════════════════════════════════════════════════
+function cropToPassport(src, preset, dpi, detection) {
+  const toP=mm=>Math.round(mm/25.4*dpi);
+  const tw=toP(preset.w), th=toP(preset.h);
+  const c=document.createElement('canvas'); c.width=tw; c.height=th;
+  const ctx=c.getContext('2d');
+  ctx.fillStyle=S.bg; ctx.fillRect(0,0,tw,th);
 
-// ── CROP TO PASSPORT SIZE ─────────────────────────────────────────────────────
-function cropToPassport(src, preset, dpi) {
-  const toP = mm => Math.round(mm / 25.4 * dpi);
-  const tw = toP(preset.w), th = toP(preset.h);
-  const c = document.createElement('canvas');
-  c.width = tw; c.height = th;
-  const ctx = c.getContext('2d');
-  ctx.fillStyle = S.bg; ctx.fillRect(0, 0, tw, th);
-  const sa = src.width / src.height, da = tw / th;
-  let dw, dh, ox, oy;
-  if (sa > da) {
-    // Source wider than passport — fit height, center horizontally
-    dh = th; dw = src.width * (th / src.height);
-    ox = (tw - dw) / 2; oy = 0;
+  if(detection){
+    // ── Face-detected crop using BlazeFace box + landmarks ──────────────
+    const [x1,y1]=detection.topLeft;
+    const [x2,y2]=detection.bottomRight;
+    const fH=y2-y1;
+
+    // Crown: ~28% above face box top (accounts for hair)
+    const crownY=y1-fH*0.28;
+    const chinY =y2+fH*0.04; // slight chin extension
+    const totalH=chinY-crownY;
+
+    // Horizontal center = midpoint of eyes
+    const [rEx,]= detection.landmarks[0];
+    const [lEx,]= detection.landmarks[1];
+    const eyeCX =(rEx+lEx)/2;
+
+    // Passport rule: face = 75% of photo height; crown at 10% from top
+    const scale  = (th*0.75)/totalH;
+    const srcW   = tw/scale;
+    const srcH   = th/scale;
+    const srcX   = eyeCX-srcW/2;
+    const srcY   = crownY-(th*0.10/scale);
+
+    // Canvas clips OOB source coords naturally — shows BG color for out-of-frame areas
+    ctx.drawImage(src, srcX, srcY, srcW, srcH, 0, 0, tw, th);
   } else {
-    // Source taller than passport — fit width, focus on UPPER/face area (not center)
-    dw = tw; dh = src.height * (tw / src.width);
-    ox = 0;
-    // 0.2 bias → shows top 80% of overflow, keeping face in frame
-    oy = (th - dh) * 0.20;
+    // ── Smart fallback ───────────────────────────────────────────────────
+    const sa=src.width/src.height, da=tw/th;
+    let dw,dh,ox,oy;
+    if(sa>da){ dh=th; dw=src.width*(th/src.height); ox=(tw-dw)/2; oy=0; }
+    else { dw=tw; dh=src.height*(tw/src.width); ox=0; oy=(th-dh)*0.15; }
+    ctx.drawImage(src,0,0,src.width,src.height,ox,oy,dw,dh);
   }
-  ctx.drawImage(src, ox, oy, dw, dh);
   return c;
 }
 
-// ── ENHANCE ──────────────────────────────────────────────────────────────────
-function enhance(c) {
-  const ctx = c.getContext('2d');
-  const w = c.width, h = c.height;
+// ══════════════════════════════════════════════════════════════
+// MAIN PIPELINE
+// ══════════════════════════════════════════════════════════════
+async function processPhoto(srcCanvas) {
+  let work=srcCanvas, bgRemoved=false;
+
+  // 1. Background removal → replaces photo background with selected color
+  if(S.removeBg && segModel){
+    try { work=await applyBgRemoval(srcCanvas); bgRemoved=true; }
+    catch(e){ console.warn('BG removal skipped:',e.message); work=srcCanvas; }
+  }
+
+  // 2. Face detection on BG-removed canvas (cleaner edges → better detection)
+  const detection=await detectFace(work);
+  const faceDetected=!!detection;
+
+  // 3. Crop to passport dimensions
+  const preset=PRESETS[S.preset];
+  const cropped=cropToPassport(work, preset, S.dpi, detection);
+  const originalURL=canvasToDataURL(cropped,0.93);
+
+  // 4. Enhance clone
+  const enh=cloneCanvas(cropped);
+  enhance(enh);
+  const enhancedURL=canvasToDataURL(enh,0.95);
+
+  return { originalURL, enhancedURL, faceDetected, bgRemoved };
+}
+
+// ══════════════════════════════════════════════════════════════
+// ENHANCEMENT PIPELINE
+// ══════════════════════════════════════════════════════════════
+function enhance(c){
+  const ctx=c.getContext('2d'), w=c.width, h=c.height;
   let id;
-
-  if (S.whiteBalance) {
-    id = ctx.getImageData(0, 0, w, h);
-    doWhiteBalance(id.data);
-    ctx.putImageData(id, 0, 0);
-  }
-  if (S.autoLevels) {
-    id = ctx.getImageData(0, 0, w, h);
-    doAutoLevels(id.data, w * h);
-    ctx.putImageData(id, 0, 0);
-  }
-  if (S.brighten) {
-    id = ctx.getImageData(0, 0, w, h);
-    doBrighten(id.data, 12);
-    ctx.putImageData(id, 0, 0);
-  }
-  if (S.sharpen) {
-    id = ctx.getImageData(0, 0, w, h);
-    const res = doSharpen(id, w, h);
-    ctx.putImageData(res, 0, 0);
-  }
+  if(S.whiteBalance){ id=ctx.getImageData(0,0,w,h); doWhiteBalance(id.data); ctx.putImageData(id,0,0); }
+  if(S.autoLevels)  { id=ctx.getImageData(0,0,w,h); doAutoLevels(id.data,w*h); ctx.putImageData(id,0,0); }
+  if(S.brighten)    { id=ctx.getImageData(0,0,w,h); doBrighten(id.data,14); ctx.putImageData(id,0,0); }
+  if(S.skinSmooth)  { id=ctx.getImageData(0,0,w,h); doSkinSmooth(id,w,h); ctx.putImageData(id,0,0); }
+  if(S.sharpen)     { id=ctx.getImageData(0,0,w,h); ctx.putImageData(doUnsharpMask(id,w,h),0,0); }
 }
 
-function doWhiteBalance(d) {
-  let r=0,g=0,b=0, n=d.length/4;
-  for (let i=0;i<d.length;i+=4){r+=d[i];g+=d[i+1];b+=d[i+2]}
+function doWhiteBalance(d){
+  let r=0,g=0,b=0,n=d.length/4;
+  for(let i=0;i<d.length;i+=4){r+=d[i];g+=d[i+1];b+=d[i+2]}
   const gr=(r+g+b)/(3*n);
-  const rs=Math.min(1.7,gr/(r/n||1)), gs=Math.min(1.7,gr/(g/n||1)), bs=Math.min(1.7,gr/(b/n||1));
-  for (let i=0;i<d.length;i+=4){
-    d[i]=Math.min(255,d[i]*rs); d[i+1]=Math.min(255,d[i+1]*gs); d[i+2]=Math.min(255,d[i+2]*bs);
-  }
+  const rs=Math.min(1.55,gr/(r/n||1)),gs=Math.min(1.55,gr/(g/n||1)),bs=Math.min(1.55,gr/(b/n||1));
+  for(let i=0;i<d.length;i+=4){d[i]=Math.min(255,d[i]*rs);d[i+1]=Math.min(255,d[i+1]*gs);d[i+2]=Math.min(255,d[i+2]*bs)}
 }
-
-function doAutoLevels(d, n) {
+function doAutoLevels(d,n){
   const h=[new Uint32Array(256),new Uint32Array(256),new Uint32Array(256)];
-  for (let i=0;i<d.length;i+=4){h[0][d[i]]++;h[1][d[i+1]]++;h[2][d[i+2]]++}
-  const lo=[], hi=[];
-  for (let c=0;c<3;c++){
-    let s=0,l=0,hv=255;
-    const c1=n*.01, c99=n*.99;
-    for (let v=0;v<256;v++){s+=h[c][v];if(s<c1)l=v;if(s<c99)hv=v}
-    lo.push(l); hi.push(Math.max(hv,l+1));
+  for(let i=0;i<d.length;i+=4){h[0][d[i]]++;h[1][d[i+1]]++;h[2][d[i+2]]++}
+  const lo=[],hi=[];
+  for(let c=0;c<3;c++){
+    let s=0,l=0,hv=255;const c1=n*.005,c99=n*.995;
+    for(let v=0;v<256;v++){s+=h[c][v];if(s<c1)l=v;if(s<c99)hv=v}
+    lo.push(l);hi.push(Math.max(hv,l+1));
   }
-  for (let i=0;i<d.length;i+=4){
-    for (let c=0;c<3;c++)
-      d[i+c]=Math.min(255,Math.max(0,(d[i+c]-lo[c])/(hi[c]-lo[c])*255));
-  }
+  for(let i=0;i<d.length;i+=4)for(let c=0;c<3;c++)d[i+c]=Math.min(255,Math.max(0,(d[i+c]-lo[c])/(hi[c]-lo[c])*255));
 }
-
-function doBrighten(d, amt) {
-  for (let i=0;i<d.length;i+=4){
-    d[i]=Math.min(255,d[i]+amt);
-    d[i+1]=Math.min(255,d[i+1]+amt);
-    d[i+2]=Math.min(255,d[i+2]+amt);
-  }
-}
-
-function doSharpen(imageData, w, h) {
-  const kernel=[0,-.5,0,-.5,3,-.5,0,-.5,0];
-  const src=imageData.data, dst=new Uint8ClampedArray(src.length);
-  for (let y=0;y<h;y++){
-    for (let x=0;x<w;x++){
-      let r=0,g=0,b=0;
-      for (let ky=-1;ky<=1;ky++){
-        for (let kx=-1;kx<=1;kx++){
-          const px=Math.min(w-1,Math.max(0,x+kx));
-          const py=Math.min(h-1,Math.max(0,y+ky));
-          const i=(py*w+px)*4;
-          const k=kernel[(ky+1)*3+(kx+1)];
-          r+=src[i]*k; g+=src[i+1]*k; b+=src[i+2]*k;
-        }
-      }
-      const i=(y*w+x)*4;
-      dst[i]=Math.min(255,Math.max(0,r));
-      dst[i+1]=Math.min(255,Math.max(0,g));
-      dst[i+2]=Math.min(255,Math.max(0,b));
-      dst[i+3]=src[i+3];
+function doBrighten(d,amt){for(let i=0;i<d.length;i+=4){d[i]=Math.min(255,d[i]+amt);d[i+1]=Math.min(255,d[i+1]+amt);d[i+2]=Math.min(255,d[i+2]+amt)}}
+function doSkinSmooth(imageData,w,h){
+  const d=imageData.data,tmp=new Uint8ClampedArray(d);
+  const isSkin=(r,g,b)=>r>60&&r>g&&g>b&&(r-b)>25&&r<240;
+  for(let y=1;y<h-1;y++)for(let x=1;x<w-1;x++){
+    const ci=(y*w+x)*4;if(!isSkin(d[ci],d[ci+1],d[ci+2]))continue;
+    let sr=0,sg=0,sb=0,cnt=0;
+    for(let dy=-1;dy<=1;dy++)for(let dx=-1;dx<=1;dx++){
+      const ni=((y+dy)*w+(x+dx))*4;
+      if(isSkin(d[ni],d[ni+1],d[ni+2])){sr+=d[ni];sg+=d[ni+1];sb+=d[ni+2];cnt++}
     }
+    if(cnt>0){tmp[ci]=Math.round((d[ci]+sr/cnt)/2);tmp[ci+1]=Math.round((d[ci+1]+sg/cnt)/2);tmp[ci+2]=Math.round((d[ci+2]+sb/cnt)/2)}
+  }
+  for(let i=0;i<d.length;i++)imageData.data[i]=tmp[i];
+}
+function doUnsharpMask(imageData,w,h){
+  const src=imageData.data,blurred=gaussianBlur(src,w,h,1.0),dst=new Uint8ClampedArray(src.length),amt=1.3;
+  for(let i=0;i<src.length-3;i+=4){
+    for(let c=0;c<3;c++)dst[i+c]=Math.min(255,Math.max(0,Math.round(src[i+c]+amt*(src[i+c]-blurred[i+c]))));
+    dst[i+3]=src[i+3];
   }
   return new ImageData(dst,w,h);
 }
+function gaussianBlur(src,w,h,r){
+  r=Math.max(1,Math.round(r));
+  let buf=new Float32Array(src.length),tmp=new Float32Array(src.length);
+  for(let i=0;i<src.length;i++)buf[i]=src[i];
+  for(let pass=0;pass<3;pass++){
+    for(let y=0;y<h;y++)for(let x=0;x<w;x++){
+      let sr=0,sg=0,sb=0,cnt=0;
+      for(let dx=-r;dx<=r;dx++){const px=Math.min(w-1,Math.max(0,x+dx)),i2=(y*w+px)*4;sr+=buf[i2];sg+=buf[i2+1];sb+=buf[i2+2];cnt++}
+      const i=(y*w+x)*4;tmp[i]=sr/cnt;tmp[i+1]=sg/cnt;tmp[i+2]=sb/cnt;tmp[i+3]=buf[i+3];
+    }
+    for(let y=0;y<h;y++)for(let x=0;x<w;x++){
+      let sr=0,sg=0,sb=0,cnt=0;
+      for(let dy=-r;dy<=r;dy++){const py=Math.min(h-1,Math.max(0,y+dy)),i2=(py*w+x)*4;sr+=tmp[i2];sg+=tmp[i2+1];sb+=tmp[i2+2];cnt++}
+      const i=(y*w+x)*4;buf[i]=sr/cnt;buf[i+1]=sg/cnt;buf[i+2]=sb/cnt;buf[i+3]=tmp[i+3];
+    }
+  }
+  return buf;
+}
 
-// ── REPROCESS ALL ─────────────────────────────────────────────────────────────
-async function reprocessAll() {
-  if (!photos.length) return;
-  setProcActive(true, 0, 'REPROCESSING...');
-  const old = [...photos];
-  photos = []; photoGrid.innerHTML = '';
-  for (let i=0;i<old.length;i++) {
-    setProgress(i/old.length*100, `REPROCESSING ${i+1}/${old.length}`);
-    const src = await dataURLtoCanvas(old[i].sourceURL);
-    const { originalURL, enhancedURL } = processPhoto(src);
-    const p = { ...old[i], originalURL, enhancedURL };
-    photos.push(p); addCard(p);
+// ══════════════════════════════════════════════════════════════
+// REPROCESS ALL
+// ══════════════════════════════════════════════════════════════
+async function reprocessAll(){
+  if(!photos.length)return;
+  setProcActive(true,0,'REPROCESSING...');
+  const old=[...photos];photos=[];photoGrid.innerHTML='';
+  for(let i=0;i<old.length;i++){
+    setProgress(i/old.length*100,`REPROCESSING ${i+1}/${old.length}`);
+    const src=await dataURLtoCanvas(old[i].sourceURL);
+    const {originalURL,enhancedURL,faceDetected,bgRemoved}=await processPhoto(src);
+    const p={...old[i],originalURL,enhancedURL,faceDetected,bgRemoved};
+    photos.push(p);addCard(p);
   }
   setProcActive(false);
-  buildPrintPreview(); buildPrintSheet(); updateUI();
+  buildPrintPreview();buildPrintSheet();updateUI();
 }
 
-// ── ADD CARD ──────────────────────────────────────────────────────────────────
-function addCard({ id, name, originalURL, enhancedURL }) {
-  const card = document.createElement('div');
-  card.className = 'photo-card'; card.dataset.id = id;
-  card.innerHTML = `
+// ══════════════════════════════════════════════════════════════
+// CARD / GALLERY
+// ══════════════════════════════════════════════════════════════
+function addCard({id,name,originalURL,enhancedURL,faceDetected,bgRemoved}){
+  const card=document.createElement('div');
+  card.className='photo-card';card.dataset.id=id;
+  const ftag=faceDetected?`<span class="tag face">👤 AI</span>`:`<span class="tag fallback">📐 AUTO</span>`;
+  const btag=bgRemoved?`<span class="tag bg">✂ BG</span>`:'';
+  card.innerHTML=`
     <div class="card-imgs">
-      <div class="cimg-wrap">
-        <img src="${originalURL}" alt="Original" loading="lazy">
-        <span class="cimg-label">ORIGINAL</span>
-      </div>
-      <div class="cimg-wrap">
-        <img src="${enhancedURL}" alt="Enhanced" loading="lazy">
-        <span class="cimg-label enh">ENHANCED ✓</span>
-      </div>
+      <div class="cimg-wrap"><img src="${originalURL}" loading="lazy"><span class="cimg-label">ORIGINAL</span></div>
+      <div class="cimg-wrap"><img src="${enhancedURL}" loading="lazy"><span class="cimg-label enh">ENHANCED ✓</span></div>
     </div>
-    <div class="card-foot">
-      <span class="card-name" title="${name}">${name}</span>
-      <button class="card-del" onclick="deletePhoto(${id})" title="Remove">✕</button>
-    </div>
-  `;
-  photoGrid.appendChild(card);
-  updateUI();
+    <div class="card-foot">${ftag}${btag}<span class="card-name" title="${name}">${name}</span><button class="card-del" onclick="deletePhoto(${id})">✕</button></div>`;
+  photoGrid.appendChild(card);updateUI();
+}
+function deletePhoto(id){
+  photos=photos.filter(p=>p.id!==id);
+  const el=photoGrid.querySelector(`[data-id="${id}"]`);if(el)el.remove();
+  if(!photos.length){clearAll();return;}
+  buildPrintPreview();buildPrintSheet();updateUI();
+}
+function clearAll(){
+  photos=[];photoGrid.innerHTML='';a4Paper.innerHTML='';printSheet.innerHTML='';
+  gallery.style.display='none';previewSection.style.display='none';actionBar.style.display='none';
 }
 
-// ── DELETE ────────────────────────────────────────────────────────────────────
-function deletePhoto(id) {
-  photos = photos.filter(p => p.id !== id);
-  const el = photoGrid.querySelector(`[data-id="${id}"]`);
-  if (el) el.remove();
-  if (!photos.length) { clearAll(); return; }
-  buildPrintPreview(); buildPrintSheet(); updateUI();
+// ══════════════════════════════════════════════════════════════
+// PRINT PREVIEW & SHEET
+// ══════════════════════════════════════════════════════════════
+function getPhotosForPrint(){
+  const copies=Math.max(1,parseInt(document.getElementById('copiesInput').value)||6);
+  const res=[];photos.forEach(p=>{for(let i=0;i<copies;i++)res.push(p)});return res;
 }
-
-function clearAll() {
-  photos = []; photoGrid.innerHTML = ''; a4Paper.innerHTML = '';
-  printSheet.innerHTML = '';
-  gallery.style.display = 'none';
-  previewSection.style.display = 'none';
-  actionBar.style.display = 'none';
+function buildPrintPreview(){
+  if(!photos.length)return;
+  const preset=PRESETS[S.preset],cols=S.cols,pp=getPhotosForPrint();
+  const pageW=557,gap=7,photoW=Math.floor((pageW-(cols-1)*gap)/cols),photoH=Math.round(photoW*preset.h/preset.w);
+  a4Paper.innerHTML='';a4Paper.style.gap=gap+'px';
+  pp.forEach(p=>{const img=document.createElement('img');img.src=p.enhancedURL;img.className='pv-photo';img.style.width=photoW+'px';img.style.height=photoH+'px';img.style.objectFit='cover';a4Paper.appendChild(img)});
+  const rows=Math.ceil(pp.length/cols);
+  a4Paper.style.minHeight=Math.max(842,rows*(photoH+gap)+38)+'px';
+  const mm2px=mm=>Math.round(mm/25.4*S.dpi);
+  const copies=Math.max(1,parseInt(document.getElementById('copiesInput').value)||6);
+  document.getElementById('pvInfo').textContent=`${pp.length} photos · ${photos.length}×${copies} · ${preset.label} · ${mm2px(preset.w)}×${mm2px(preset.h)}px@${S.dpi}DPI`;
 }
-
-// ── EXPAND PHOTOS BY COPIES ───────────────────────────────────────────────────
-function getPhotosForPrint() {
-  const copies = Math.max(1, parseInt(document.getElementById('copiesInput').value) || 1);
-  const result = [];
-  photos.forEach(p => { for (let i = 0; i < copies; i++) result.push(p); });
-  return result;
-}
-
-// ── PRINT PREVIEW (on-screen A4) ─────────────────────────────────────────────
-function buildPrintPreview() {
-  if (!photos.length) return;
-  const preset = PRESETS[S.preset];
-  const cols = S.cols;
-  const printPhotos = getPhotosForPrint();
-  const pageW = 557;
-  const gap = 7;
-  const photoW = Math.floor((pageW - (cols-1)*gap) / cols);
-  const photoH = Math.round(photoW * preset.h / preset.w);
-
-  a4Paper.innerHTML = '';
-  a4Paper.style.gap = gap + 'px';
-
-  printPhotos.forEach(p => {
-    const img = document.createElement('img');
-    img.src = p.enhancedURL; img.className = 'pv-photo';
-    img.style.width = photoW + 'px'; img.style.height = photoH + 'px';
-    img.style.objectFit = 'cover';
-    a4Paper.appendChild(img);
-  });
-
-  const rows = Math.ceil(printPhotos.length / cols);
-  a4Paper.style.minHeight = Math.max(842, rows*(photoH+gap)+38) + 'px';
-
-  const mm2px = mm => Math.round(mm/25.4*S.dpi);
-  const copies = Math.max(1, parseInt(document.getElementById('copiesInput').value) || 1);
-  document.getElementById('pvInfo').textContent =
-    `${printPhotos.length} photos (${photos.length} × ${copies} copies) · ${preset.label} · ${mm2px(preset.w)}×${mm2px(preset.h)}px @ ${S.dpi}DPI`;
-}
-
-// ── PRINT SHEET (actual print) ────────────────────────────────────────────────
-function buildPrintSheet() {
-  if (!photos.length) return;
-  const preset = PRESETS[S.preset];
-  const gap_mm = 2;
-  const pageW_mm = 200, pageH_mm = 287;
-  const maxCols = Math.min(S.cols, Math.floor((pageW_mm + gap_mm) / (preset.w + gap_mm)));
-  const maxRows = Math.floor((pageH_mm + gap_mm) / (preset.h + gap_mm));
-  const perPage = maxCols * maxRows;
-  const printPhotos = getPhotosForPrint();
-
-  printSheet.innerHTML = '';
-  for (let i = 0; i < printPhotos.length; i += perPage) {
-    const slice = printPhotos.slice(i, i + perPage);
-    const page = document.createElement('div');
-    page.className = 'print-page';
-    page.style.cssText = `
-      width:210mm;min-height:297mm;padding:5mm;
-      display:flex;flex-wrap:wrap;align-content:flex-start;
-      gap:${gap_mm}mm;background:#fff;page-break-after:always;
-    `;
-    slice.forEach(p => {
-      const img = document.createElement('img');
-      img.src = p.enhancedURL; img.className = 'print-photo';
-      img.style.cssText = `width:${preset.w}mm;height:${preset.h}mm;object-fit:cover;display:block;flex-shrink:0`;
-      page.appendChild(img);
-    });
+function buildPrintSheet(){
+  if(!photos.length)return;
+  const preset=PRESETS[S.preset],gap_mm=2,pageW_mm=200,pageH_mm=287;
+  const maxCols=Math.min(S.cols,Math.floor((pageW_mm+gap_mm)/(preset.w+gap_mm)));
+  const maxRows=Math.floor((pageH_mm+gap_mm)/(preset.h+gap_mm));
+  const perPage=maxCols*maxRows,pp=getPhotosForPrint();
+  printSheet.innerHTML='';
+  for(let i=0;i<pp.length;i+=perPage){
+    const slice=pp.slice(i,i+perPage),page=document.createElement('div');
+    page.className='print-page';
+    page.style.cssText=`width:210mm;min-height:297mm;padding:5mm;display:flex;flex-wrap:wrap;align-content:flex-start;gap:${gap_mm}mm;background:#fff;page-break-after:always;`;
+    slice.forEach(p=>{const img=document.createElement('img');img.src=p.enhancedURL;img.className='print-photo';img.style.cssText=`width:${preset.w}mm;height:${preset.h}mm;object-fit:cover;display:block;flex-shrink:0`;page.appendChild(img)});
     printSheet.appendChild(page);
   }
 }
-
-// ── PRINT ─────────────────────────────────────────────────────────────────────
-function doPrint() {
-  if (!photos.length) { toast('No photos to print', 'error'); return; }
-  buildPrintSheet();
-  window.print();
+function doPrint(){ if(!photos.length){toast('No photos','error');return;} buildPrintSheet();window.print(); }
+async function downloadZIP(){
+  if(!photos.length)return;
+  toast('Creating ZIP...','info');
+  const zip=new JSZip(),folder=zip.folder('passport_photos');
+  photos.forEach((p,i)=>folder.file(`photo_${String(i+1).padStart(3,'0')}.jpg`,p.enhancedURL.split(',')[1],{base64:true}));
+  const blob=await zip.generateAsync({type:'blob'});
+  const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download='passport_photos.zip';a.click();URL.revokeObjectURL(a.href);
+  toast('ZIP downloaded ✓','success');
 }
 
-// ── DOWNLOAD ZIP ──────────────────────────────────────────────────────────────
-async function downloadZIP() {
-  if (!photos.length) return;
-  toast('Creating ZIP...', 'info');
-  const zip = new JSZip();
-  const folder = zip.folder('passport_photos');
-  photos.forEach((p, i) => {
-    const b64 = p.enhancedURL.split(',')[1];
-    const fname = `photo_${String(i+1).padStart(3,'0')}.jpg`;
-    folder.file(fname, b64, { base64: true });
-  });
-  const blob = await zip.generateAsync({ type: 'blob' });
-  const a = document.createElement('a');
-  a.href = URL.createObjectURL(blob);
-  a.download = 'passport_photos.zip';
-  a.click(); URL.revokeObjectURL(a.href);
-  toast('ZIP downloaded ✓', 'success');
-}
-
-// ── UI HELPERS ────────────────────────────────────────────────────────────────
-function showUI() {
-  gallery.style.display = 'block';
-  previewSection.style.display = 'block';
-  actionBar.style.display = 'flex';
-  updateUI();
-}
-
-function updateUI() {
-  const n = photos.length;
-  const preset = PRESETS[S.preset];
-  document.getElementById('galleryCount').textContent = n;
-  document.getElementById('infoPill').textContent =
-    `${n} PHOTO${n !== 1?'S':''} · ${preset.label}`;
-}
-
-function setProcActive(on, pct, text) {
-  procBar.classList.toggle('active', on);
-  if (text) procText.textContent = text;
-  if (pct !== undefined) progFill.style.width = pct + '%';
-  if (!on) setTimeout(()=>{ progFill.style.width='0%' }, 400);
-}
-
-function setProgress(pct, text) {
-  progFill.style.width = pct + '%';
-  if (text) procText.textContent = text;
-}
-
+// ══════════════════════════════════════════════════════════════
+// UI HELPERS
+// ══════════════════════════════════════════════════════════════
+function showUI(){ gallery.style.display='block';previewSection.style.display='block';actionBar.style.display='flex';updateUI(); }
+function updateUI(){ const n=photos.length,p=PRESETS[S.preset]; document.getElementById('galleryCount').textContent=n; document.getElementById('infoPill').textContent=`${n} PHOTO${n!==1?'S':''} · ${p.label}`; }
+function setProcActive(on,pct,text){ procBar.classList.toggle('active',on);if(text)procText.textContent=text;if(pct!==undefined)progFill.style.width=pct+'%';if(!on)setTimeout(()=>{progFill.style.width='0%'},400); }
+function setProgress(pct,text){ progFill.style.width=pct+'%';if(text)procText.textContent=text; }
 let _tt;
-function toast(msg, type='') {
-  const el = document.getElementById('toast');
-  el.textContent = msg; el.className = 'show ' + type;
-  clearTimeout(_tt);
-  _tt = setTimeout(() => el.className = '', 3200);
-}
+function toast(msg,type=''){ const el=document.getElementById('toast');el.textContent=msg;el.className='show '+type;clearTimeout(_tt);_tt=setTimeout(()=>el.className='',3200); }
 </script>
 </body>
 </html>
