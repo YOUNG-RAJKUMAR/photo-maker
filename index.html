@@ -512,34 +512,81 @@ function runSegmentation(canvas) {
 
 // Composite mask onto BG color
 function compositeMask(srcCanvas, maskCanvas) {
-  const w=srcCanvas.width, h=srcCanvas.height;
-  const srcPx  = get2d(srcCanvas,true).getImageData(0,0,w,h).data;
-  const maskPx = get2d(maskCanvas,true).getImageData(0,0,w,h).data;
+  const w = srcCanvas.width;
+  const h = srcCanvas.height;
+
+  const srcCtx = get2d(srcCanvas, true);
+  const maskCtx = get2d(maskCanvas, true);
+
+  const srcData = srcCtx.getImageData(0,0,w,h);
+  const maskData = maskCtx.getImageData(0,0,w,h);
+
+  const outCanvas = document.createElement('canvas');
+  outCanvas.width = w;
+  outCanvas.height = h;
+
+  const outCtx = get2d(outCanvas, true);
+  const outImg = outCtx.createImageData(w,h);
+
   const bg = hexToRgb(S.bg);
 
-  const outC = document.createElement('canvas');
-  outC.width=w; outC.height=h;
-  const outCtx = get2d(outC,true);
-  const outImg = outCtx.createImageData(w,h);
-  const outPx = outImg.data;
+  for(let i=0;i<srcData.data.length;i+=4){
 
-  for(let i=0;i<srcPx.length;i+=4){
-    let a = maskPx[i]/255;
+    let a = maskData.data[i] / 255;
 
-    // 🔥 feather edge (important fix)
-    if(a > 0.1 && a < 0.9){
-      a = a * a * (3 - 2 * a); // smoothstep
-    }
+    // 🔥 PRO EDGE CURVE (fix jagged edges)
+    a = Math.pow(a, 1.8);
 
-    outPx[i]   = srcPx[i]*a + bg.r*(1-a);
-    outPx[i+1] = srcPx[i+1]*a + bg.g*(1-a);
-    outPx[i+2] = srcPx[i+2]*a + bg.b*(1-a);
-    outPx[i+3] = 255;
+    // 🔥 kill halo (very important)
+    if(a < 0.08) a = 0;
+    if(a > 0.92) a = 1;
+
+    outImg.data[i]   = srcData.data[i]   * a + bg.r * (1 - a);
+    outImg.data[i+1] = srcData.data[i+1] * a + bg.g * (1 - a);
+    outImg.data[i+2] = srcData.data[i+2] * a + bg.b * (1 - a);
+    outImg.data[i+3] = 255;
   }
 
   outCtx.putImageData(outImg,0,0);
-  return outC;
+  return outCanvas;
 }
+
+
+function expandMask(maskCanvas){
+  const ctx = get2d(maskCanvas, true);
+  const w = maskCanvas.width;
+  const h = maskCanvas.height;
+
+  const img = ctx.getImageData(0,0,w,h);
+  const d = img.data;
+
+  const copy = new Uint8ClampedArray(d);
+
+  for(let y=1;y<h-1;y++){
+    for(let x=1;x<w-1;x++){
+      let max = 0;
+
+      for(let dy=-1;dy<=1;dy++){
+        for(let dx=-1;dx<=1;dx++){
+          const i = ((y+dy)*w+(x+dx))*4;
+          max = Math.max(max, d[i]);
+        }
+      }
+
+      const idx = (y*w+x)*4;
+      copy[idx] = max;
+      copy[idx+1] = max;
+      copy[idx+2] = max;
+    }
+  }
+
+  for(let i=0;i<d.length;i++){
+    d[i] = copy[i];
+  }
+
+  ctx.putImageData(img,0,0);
+}
+
 
 async function applyBgRemoval(srcCanvas) {
 
@@ -547,22 +594,43 @@ async function applyBgRemoval(srcCanvas) {
     try {
       setProgress(undefined, '✂ REMOVING BG...');
 
-      const ws = downscaleCanvas(srcCanvas, 1024);
+      const ws = downscaleCanvas(srcCanvas, 1536); // better edges
       const rawMask = await runSegmentation(ws);
 
       const mc = document.createElement('canvas');
       mc.width = ws.width;
       mc.height = ws.height;
 
+    async function applyBgRemoval(srcCanvas) {
+
+  if (segModel) {
+    try {
+      setProgress(undefined, '✂ REMOVING BG...');
+
+      const ws = downscaleCanvas(srcCanvas, 1536);
+      const rawMask = await runSegmentation(ws);
+
+      const mc = document.createElement('canvas');
+      mc.width = ws.width;
+      mc.height = ws.height;
+
+      // ✅ draw mask correctly
       get2d(mc, true).drawImage(rawMask, 0, 0, ws.width, ws.height);
 
-      // Upscale mask
+      // ✅ STEP 1: smooth edges (VERY IMPORTANT)
+      smoothMask(mc);
+
+      // ✅ STEP 2: expand mask (fix hair cut)
+      expandMask(mc);
+
+      // ✅ upscale mask to original size
       const fc = document.createElement('canvas');
       fc.width = srcCanvas.width;
       fc.height = srcCanvas.height;
 
       fc.getContext('2d').drawImage(mc, 0, 0, srcCanvas.width, srcCanvas.height);
 
+      // ✅ FINAL COMPOSITE
       return compositeMask(srcCanvas, fc);
 
     } catch(e) {
@@ -571,6 +639,16 @@ async function applyBgRemoval(srcCanvas) {
   }
 
   return srcCanvas;
+}
+
+function smoothMask(maskCanvas){
+  const ctx = get2d(maskCanvas, true);
+
+  // Stronger feather (pro look)
+  ctx.filter = "blur(3px)";
+  ctx.drawImage(maskCanvas, 0, 0);
+
+  ctx.filter = "none";
 }
 
 // ══════════════════════════════════════════════════════════════
