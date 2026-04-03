@@ -6,15 +6,13 @@
 <title>StudioSnap — Passport Photo Studio</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
-<!-- TF.js core + all backends (webgl → wasm → cpu fallback chain) -->
+<!-- TF.js for BlazeFace face detection -->
 <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs-core@4.17.0/dist/tf-core.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs-converter@4.17.0/dist/tf-converter.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs-backend-webgl@4.17.0/dist/tf-backend-webgl.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs-backend-wasm@4.17.0/dist/tf-backend-wasm.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs-backend-cpu@4.17.0/dist/tf-backend-cpu.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/blazeface@0.0.7/dist/blazeface.min.js"></script>
-<!-- MediaPipe Selfie Segmentation -->
-<script src="https://cdn.jsdelivr.net/npm/@mediapipe/selfie_segmentation@0.1.1675465747/selfie_segmentation.js" crossorigin="anonymous"></script>
 <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Space+Mono:wght@400;700&family=Outfit:wght@300;400;500;600&display=swap" rel="stylesheet">
 <style>
 :root{
@@ -122,11 +120,11 @@ main{max-width:1400px;margin:0 auto;padding:28px}
 
 <header>
   <div class="logo">STUDIO<b>SNAP</b></div>
-  <div class="tagline">Passport Photo Studio · Face AI + BG Removal · Free Forever</div>
+  <div class="tagline">Passport Photo Studio · ISNet BG Removal · Free Forever</div>
   <div class="hdr-right">
     <span class="badge live">● OFFLINE READY</span>
     <span class="badge warn" id="badgeFace">⏳ FACE AI...</span>
-    <span class="badge warn" id="badgeBg">⏳ BG SEGM...</span>
+    <span class="badge warn" id="badgeBg">⏳ BG MODEL...</span>
   </div>
 </header>
 
@@ -135,10 +133,6 @@ main{max-width:1400px;margin:0 auto;padding:28px}
   <div class="divider"></div>
   <div class="sg">
     <span class="slabel">Enhance</span>
-    <button class="tog on" data-key="autoLevels">Auto Levels</button>
-    <button class="tog on" data-key="whiteBalance">White Balance</button>
-    <button class="tog on" data-key="sharpen">Sharpen</button>
-    <button class="tog on" data-key="brighten">Brighten</button>
     <button class="tog on" data-key="skinSmooth">Skin Smooth</button>
   </div>
   <div class="divider"></div>
@@ -182,7 +176,7 @@ main{max-width:1400px;margin:0 auto;padding:28px}
   <div class="upload-zone" id="uploadZone">
     <span class="up-icon">📷</span>
     <div class="up-title">DROP PHOTOS HERE</div>
-    <div class="up-sub">Auto face AI · Real background removal · High quality enhancement</div>
+    <div class="up-sub">ISNet AI · remove.bg-quality · Free forever · Hair edges perfect</div>
     <div class="up-formats">
       <span class="fmt-chip">JPG</span><span class="fmt-chip">PNG</span>
       <span class="fmt-chip">WEBP</span><span class="fmt-chip">PDF</span><span class="fmt-chip">Bulk</span>
@@ -225,10 +219,6 @@ main{max-width:1400px;margin:0 auto;padding:28px}
 pdfjsLib.GlobalWorkerOptions.workerSrc =
   'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
 
-// ══════════════════════════════════════════════════════════════
-// CANVAS HELPER — fixes "willReadFrequently" console warning
-// Use this everywhere we call getImageData in a loop
-// ══════════════════════════════════════════════════════════════
 function get2d(canvas, willReadFrequently = false) {
   return canvas.getContext('2d', { willReadFrequently });
 }
@@ -237,52 +227,46 @@ function get2d(canvas, willReadFrequently = false) {
 // AI MODELS
 // ══════════════════════════════════════════════════════════════
 let blazeModel = null;
-let segModel   = null;
 
-// ── FIX: Try webgl → wasm → cpu backend chain ─────────────────
-async function loadBlazeFace() {
+// ── @imgly/background-removal (ISNet — remove.bg quality, free forever) ──
+let bgRemovalLib = null;
+const IMGLY_CDN = 'https://cdn.jsdelivr.net/npm/@imgly/background-removal@1.4.5/dist/';
+
+async function loadBgRemoval() {
   try {
-    // 🔥 FORCE SAFE BACKEND ORDER
-    try {
-      await tf.setBackend('wasm');
-      await tf.ready();
-      console.log('Using WASM backend');
-    } catch {
-      await tf.setBackend('cpu');
-      await tf.ready();
-      console.log('Using CPU backend');
-    }
-
-    blazeModel = await blazeface.load();
-    setBadge('badgeFace', '✓ FACE AI', 'ok');
-
+    setBadge('badgeBg', '⏳ LOADING ISNet...', 'warn');
+    // Dynamic ESM import
+    const mod = await import(
+      'https://cdn.jsdelivr.net/npm/@imgly/background-removal@1.4.5/dist/bundle.browser.esm.js'
+    );
+    bgRemovalLib = mod;
+    // Warm-up: first call downloads & caches the model (~87MB fp16)
+    setBadge('badgeBg', '⏳ WARMING UP...', 'warn');
+    const warmCanvas = document.createElement('canvas');
+    warmCanvas.width = 64; warmCanvas.height = 64;
+    const warmBlob = await new Promise(r => warmCanvas.toBlob(r, 'image/jpeg', 0.5));
+    await bgRemovalLib.removeBackground(warmBlob, {
+      publicPath: IMGLY_CDN,
+      model: 'isnet_fp16',       // fp16 = ~87MB, excellent quality
+      output: { format: 'image/png', quality: 1 }
+    });
+    setBadge('badgeBg', '✓ ISNet READY', 'ok');
+    console.log('BG removal (ISNet fp16) ready');
   } catch(e) {
-    setBadge('badgeFace', '⚠ SMART CROP', 'warn');
-    console.warn('BlazeFace failed:', e.message);
+    console.warn('BG removal load failed:', e.message);
+    setBadge('badgeBg', '⚠ BG UNAVAIL', 'warn');
   }
 }
 
-async function loadSegmentation() {
+async function loadBlazeFace() {
   try {
-    const seg = new SelfieSegmentation({
-      locateFile: f => `https://cdn.jsdelivr.net/npm/@mediapipe/selfie_segmentation@0.1.1675465747/${f}`
-    });
-    seg.setOptions({ modelSelection: 1 });
-
-    await new Promise((resolve, reject) => {
-      const t = setTimeout(() => reject(new Error('timeout')), 25000);
-      seg.onResults(() => { clearTimeout(t); resolve(); });
-      const tmp = document.createElement('canvas');
-      tmp.width = 64; tmp.height = 64;
-      seg.send({ image: tmp }).catch(reject);
-    });
-
-    segModel = seg;
-    setBadge('badgeBg', '✓ BG REMOVE', 'ok');
-    console.log('Selfie segmentation ready');
+    try { await tf.setBackend('wasm'); await tf.ready(); }
+    catch { await tf.setBackend('cpu'); await tf.ready(); }
+    blazeModel = await blazeface.load();
+    setBadge('badgeFace', '✓ FACE AI', 'ok');
   } catch(e) {
-    setBadge('badgeBg', '⚠ BG FILL', 'warn');
-    console.warn('Segmentation unavailable:', e.message);
+    setBadge('badgeFace', '⚠ SMART CROP', 'warn');
+    console.warn('BlazeFace failed:', e.message);
   }
 }
 
@@ -292,7 +276,7 @@ function setBadge(id, text, cls) {
 }
 
 loadBlazeFace();
-loadSegmentation();
+loadBgRemoval();
 
 // ══════════════════════════════════════════════════════════════
 // PRESETS
@@ -319,8 +303,7 @@ const PRESETS = {
 // ══════════════════════════════════════════════════════════════
 let photos = [];
 const S = {
-  preset:'nepal', autoLevels:true, whiteBalance:true, sharpen:true,
-  brighten:true, skinSmooth:true, faceAlign:true, removeBg:true,
+  preset:'nepal', skinSmooth:true, faceAlign:true, removeBg:true,
   cols:4, dpi:300, bg:'#ffffff',
 };
 
@@ -406,7 +389,6 @@ function loadImageCanvas(file) {
     img.onload=()=>{
       const c=document.createElement('canvas');
       c.width=img.naturalWidth; c.height=img.naturalHeight;
-      // willReadFrequently=false here — this canvas is drawn once then read once
       c.getContext('2d').drawImage(img,0,0);
       URL.revokeObjectURL(url); res(c);
     };
@@ -437,205 +419,60 @@ function canvasToDataURL(c,q=0.95){ return c.toDataURL('image/jpeg',q); }
 function cloneCanvas(s){
   const c=document.createElement('canvas');
   c.width=s.width; c.height=s.height;
-  // willReadFrequently=true because enhance() calls getImageData multiple times
-  get2d(c, true).drawImage(s,0,0);
+  get2d(c,true).drawImage(s,0,0);
   return c;
 }
 function hexToRgb(hex){ return { r:parseInt(hex.slice(1,3),16), g:parseInt(hex.slice(3,5),16), b:parseInt(hex.slice(5,7),16) }; }
 
 // ══════════════════════════════════════════════════════════════
-// BACKGROUND REMOVAL — Claude Vision API (primary) + MediaPipe (fallback)
+// BACKGROUND REMOVAL — @imgly/background-removal (ISNet model)
+// Same-class model as remove.bg. Handles hair edges perfectly.
+// Model is downloaded once, then cached by the browser forever.
 // ══════════════════════════════════════════════════════════════
+async function applyBgRemoval(srcCanvas) {
+  if (!bgRemovalLib) return srcCanvas;
 
-function downscaleCanvas(src, maxSize) {
-  if (src.width <= maxSize && src.height <= maxSize) return src;
-  const sc = maxSize / Math.max(src.width, src.height);
-  const c = document.createElement('canvas');
-  c.width = Math.round(src.width * sc); c.height = Math.round(src.height * sc);
-  c.getContext('2d').drawImage(src, 0, 0, c.width, c.height);
-  return c;
-}
-function canvasToBase64(canvas, quality=0.85) {
-  return canvas.toDataURL('image/jpeg', quality).split(',')[1];
-}
+  setProgress(undefined, '✂ ISNet REMOVING BG...');
 
-// Claude Vision API: generate black/white mask (white=person, black=bg)
-async function claudeBgMask(srcCanvas) {
-  const small = downscaleCanvas(srcCanvas, 512);
-  const b64 = canvasToBase64(small, 0.80);
-  const resp = await fetch('https://api.anthropic.com/v1/messages', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      model: 'claude-sonnet-4-20250514',
-      max_tokens: 1000,
-      system: `You are a background removal assistant. Analyze the portrait photo and output ONLY a JSON object with no markdown or extra text.
-Format: {"mask":"data:image/png;base64,..."} 
-The base64 is a grayscale PNG the SAME pixel dimensions as the input (${small.width}x${small.height}).
-White (255) = subject/foreground: face, hair, neck, ears, shoulders, clothing, arms, hands — everything that is the person.
-Black (0) = background only.
-Be very precise at hair edges. Include the full visible body. Do not cut off shoulders or arms.`,
-      messages: [{
-        role: 'user',
-        content: [
-          { type: 'image', source: { type: 'base64', media_type: 'image/jpeg', data: b64 } },
-          { type: 'text', text: `Create foreground mask for this ${small.width}x${small.height} portrait. JSON only.` }
-        ]
-      }]
-    })
+  // Convert canvas → Blob (jpeg for smaller transfer to model)
+  const srcBlob = await new Promise(resolve =>
+    srcCanvas.toBlob(resolve, 'image/jpeg', 0.95)
+  );
+
+  // Run ISNet segmentation — returns PNG Blob with alpha channel
+  const resultBlob = await bgRemovalLib.removeBackground(srcBlob, {
+    publicPath: IMGLY_CDN,
+    model: 'isnet_fp16',
+    output: {
+      format: 'image/png',
+      quality: 1,
+    }
   });
-  if (!resp.ok) throw new Error(`Claude API ${resp.status}`);
-  const data = await resp.json();
-  const text = (data.content?.find(b => b.type === 'text')?.text || '').replace(/```json|```/g,'').trim();
-  let maskURL;
-  try { maskURL = JSON.parse(text).mask; } catch(e) {
-    const m = text.match(/data:image\/[^"'\s]+/); if (m) maskURL=m[0]; else throw new Error('No mask in response');
-  }
-  return new Promise((res,rej) => {
+
+  // Load result image (RGBA PNG with transparent background)
+  const resultURL = URL.createObjectURL(resultBlob);
+  const resultImg = await new Promise((res, rej) => {
     const img = new Image();
-    img.onload = () => {
-      const mc = document.createElement('canvas'); mc.width=srcCanvas.width; mc.height=srcCanvas.height;
-      get2d(mc,true).drawImage(img, 0, 0, mc.width, mc.height); res(mc);
-    };
-    img.onerror = rej; img.src = maskURL;
+    img.onload = () => res(img);
+    img.onerror = rej;
+    img.src = resultURL;
   });
-}
+  URL.revokeObjectURL(resultURL);
 
-// MediaPipe fallback segmentation
-function runSegmentation(canvas) {
-  return new Promise((resolve,reject) => {
-    const t=setTimeout(()=>reject(new Error('seg timeout')),20000);
-    segModel.onResults(r=>{ clearTimeout(t); resolve(r.segmentationMask); });
-    segModel.send({image:canvas}).catch(reject);
-  });
-}
+  // Composite: fill background color first, then draw the cutout on top
+  const out = document.createElement('canvas');
+  out.width  = srcCanvas.width;
+  out.height = srcCanvas.height;
+  const ctx = out.getContext('2d');
 
-// Composite mask onto BG color
-function compositeMask(srcCanvas, maskCanvas) {
-  const w = srcCanvas.width;
-  const h = srcCanvas.height;
+  // 1. Paint background
+  ctx.fillStyle = S.bg;
+  ctx.fillRect(0, 0, out.width, out.height);
 
-  const srcCtx = get2d(srcCanvas, true);
-  const maskCtx = get2d(maskCanvas, true);
+  // 2. Draw transparent-bg cutout on top (alpha compositing handles edges)
+  ctx.drawImage(resultImg, 0, 0, out.width, out.height);
 
-  const srcData = srcCtx.getImageData(0,0,w,h);
-  const maskData = maskCtx.getImageData(0,0,w,h);
-
-  const outCanvas = document.createElement('canvas');
-  outCanvas.width = w;
-  outCanvas.height = h;
-
-  const outCtx = get2d(outCanvas, true);
-  const outImg = outCtx.createImageData(w,h);
-
-  const bg = hexToRgb(S.bg);
-
-  for(let i=0;i<srcData.data.length;i+=4){
-
-    let a = maskData.data[i] / 255;
-
-    // 🔥 PRO EDGE CURVE (fix jagged edges)
-    a = Math.pow(a, 1.8);
-
-    // 🔥 kill halo (very important)
-    if(a < 0.08) a = 0;
-    if(a > 0.92) a = 1;
-
-    outImg.data[i]   = srcData.data[i]   * a + bg.r * (1 - a);
-    outImg.data[i+1] = srcData.data[i+1] * a + bg.g * (1 - a);
-    outImg.data[i+2] = srcData.data[i+2] * a + bg.b * (1 - a);
-    outImg.data[i+3] = 255;
-  }
-
-  outCtx.putImageData(outImg,0,0);
-  return outCanvas;
-}
-
-
-function expandMask(maskCanvas){
-  const ctx = get2d(maskCanvas, true);
-  const w = maskCanvas.width;
-  const h = maskCanvas.height;
-
-  const img = ctx.getImageData(0,0,w,h);
-  const d = img.data;
-
-  const copy = new Uint8ClampedArray(d);
-
-  for(let y=1;y<h-1;y++){
-    for(let x=1;x<w-1;x++){
-      let max = 0;
-
-      for(let dy=-1;dy<=1;dy++){
-        for(let dx=-1;dx<=1;dx++){
-          const i = ((y+dy)*w+(x+dx))*4;
-          max = Math.max(max, d[i]);
-        }
-      }
-
-      const idx = (y*w+x)*4;
-      copy[idx] = max;
-      copy[idx+1] = max;
-      copy[idx+2] = max;
-    }
-  }
-
-  for(let i=0;i<d.length;i++){
-    d[i] = copy[i];
-  }
-
-  ctx.putImageData(img,0,0);
-}
-
-
-    async function applyBgRemoval(srcCanvas) {
-
-  if (segModel) {
-    try {
-      setProgress(undefined, '✂ REMOVING BG...');
-
-      const ws = downscaleCanvas(srcCanvas, 1536);
-      const rawMask = await runSegmentation(ws);
-
-      const mc = document.createElement('canvas');
-      mc.width = ws.width;
-      mc.height = ws.height;
-
-      // ✅ draw mask correctly
-      get2d(mc, true).drawImage(rawMask, 0, 0, ws.width, ws.height);
-
-      // ✅ STEP 1: smooth edges (VERY IMPORTANT)
-      smoothMask(mc);
-
-      // ✅ STEP 2: expand mask (fix hair cut)
-      expandMask(mc);
-
-      // ✅ upscale mask to original size
-      const fc = document.createElement('canvas');
-      fc.width = srcCanvas.width;
-      fc.height = srcCanvas.height;
-
-      fc.getContext('2d').drawImage(mc, 0, 0, srcCanvas.width, srcCanvas.height);
-
-      // ✅ FINAL COMPOSITE
-      return compositeMask(srcCanvas, fc);
-
-    } catch(e) {
-      console.warn('BG removal failed:', e.message);
-    }
-  }
-
-  return srcCanvas;
-}
-
-function smoothMask(maskCanvas){
-  const ctx = get2d(maskCanvas, true);
-
-  // Stronger feather (pro look)
-  ctx.filter = "blur(3px)";
-  ctx.drawImage(maskCanvas, 0, 0);
-
-  ctx.filter = "none";
+  return out;
 }
 
 // ══════════════════════════════════════════════════════════════
@@ -651,7 +488,7 @@ async function detectFace(canvas) {
 }
 
 // ══════════════════════════════════════════════════════════════
-// CROP TO PASSPORT — face properly centered, 15% headroom
+// CROP TO PASSPORT
 // ══════════════════════════════════════════════════════════════
 function cropToPassport(src, preset, dpi, detection) {
   const toP = mm => Math.round(mm / 25.4 * dpi);
@@ -661,37 +498,21 @@ function cropToPassport(src, preset, dpi, detection) {
   ctx.fillStyle = S.bg; ctx.fillRect(0,0,tw,th);
 
   if (detection) {
-    // ── Passport standard: head height = 70-80% of photo height
-    //    crown starts at ~8% from top
     const [x1,y1] = detection.topLeft;
     const [x2,y2] = detection.bottomRight;
     const faceH = y2 - y1;
-    const faceW = x2 - x1;
     const faceCX = (x1 + x2) / 2;
-
-    // Estimate crown (top of head) ~35% above face-box top (hair)
     const crownY = y1 - faceH * 0.35;
-    // Estimate chin ~5% below face-box bottom
     const chinY  = y2 + faceH * 0.05;
-    const headH  = chinY - crownY; // full head height in source pixels
-
-    // Target: head fills 75% of photo height; crown at 8% from top
+    const headH  = chinY - crownY;
     const targetHeadH = th * 0.75;
     const scale = targetHeadH / headH;
-
-    // In source space, how many pixels correspond to the full photo
     const srcPhotoH = th / scale;
     const srcPhotoW = tw / scale;
-
-    // Position: crown lands at 8% from top of output photo
     const srcY = crownY - (th * 0.08 / scale);
-    // Horizontally center on face center
     const srcX = Math.max(0, Math.min(src.width - srcPhotoW, faceCX - srcPhotoW / 2));
-
     ctx.drawImage(src, srcX, srcY, srcPhotoW, srcPhotoH, 0, 0, tw, th);
-
   } else {
-    // ── Fallback: center-crop preserving aspect, shift up slightly ──
     const sa = src.width / src.height, da = tw / th;
     let dw, dh, ox, oy;
     if (sa > da) {
@@ -699,12 +520,11 @@ function cropToPassport(src, preset, dpi, detection) {
       ox=(tw-dw)/2; oy=0;
     } else {
       dw=tw; dh=src.height*(tw/src.width);
-      ox=0; oy=(th-dh)*0.12; // shift up 12% from center (put face upper half)
+      ox=0; oy=(th-dh)*0.12;
     }
     ctx.drawImage(src, 0, 0, src.width, src.height, ox, oy, dw, dh);
   }
 
-  // ── Border ────────────────────────────────────────────────────
   const borderPx = Math.max(2, Math.round(tw * 0.012));
   ctx.strokeStyle = '#888888';
   ctx.lineWidth   = borderPx;
@@ -717,267 +537,176 @@ function cropToPassport(src, preset, dpi, detection) {
 // MAIN PIPELINE
 // ══════════════════════════════════════════════════════════════
 async function processPhoto(srcCanvas) {
-  let work=srcCanvas, bgRemoved=false;
+  let work = srcCanvas;
+  let bgRemoved = false;
 
-  if(S.removeBg && segModel){
-    try { work=await applyBgRemoval(srcCanvas); bgRemoved=true; }
-    catch(e){ console.warn('BG removal skipped:',e.message); work=srcCanvas; }
+  if (S.removeBg && bgRemovalLib) {
+    try {
+      work = await applyBgRemoval(srcCanvas);
+      bgRemoved = true;
+    } catch(e) {
+      console.warn('BG removal skipped:', e.message);
+      work = srcCanvas;
+    }
   }
 
-  const detection=await detectFace(work);
-  const faceDetected=!!detection;
+  const detection = await detectFace(work);
+  const faceDetected = !!detection;
 
-  const preset=PRESETS[S.preset];
-  const cropped=cropToPassport(work, preset, S.dpi, detection);
-  const originalURL=canvasToDataURL(cropped,0.93);
+  const preset  = PRESETS[S.preset];
+  const cropped = cropToPassport(work, preset, S.dpi, detection);
+  const originalURL = canvasToDataURL(cropped, 0.93);
 
-  const enh=cloneCanvas(cropped); // cloneCanvas now sets willReadFrequently=true
+  const enh = cloneCanvas(cropped);
   enhance(enh);
-  const enhancedURL=canvasToDataURL(enh,0.95);
+  const enhancedURL = canvasToDataURL(enh, 0.95);
 
   return { originalURL, enhancedURL, faceDetected, bgRemoved };
 }
 
 // ══════════════════════════════════════════════════════════════
-// ENHANCEMENT PIPELINE — Remini-style quality
-// Order: WB → CLAHE → Vibrance → S-curve → Skin smooth → Sharpen
+// ENHANCEMENT — Skin Smooth only
 // ══════════════════════════════════════════════════════════════
-function enhance(c){
+function enhance(c) {
+  if (!S.skinSmooth) return;
   const ctx = get2d(c, true);
   const w = c.width, h = c.height;
-
-  if(S.skinSmooth){
-    let id = ctx.getImageData(0,0,w,h);
-    doSkinSmooth(id, w, h);
-    ctx.putImageData(id,0,0);
-  }
+  const id = ctx.getImageData(0, 0, w, h);
+  doSkinSmooth(id, w, h);
+  ctx.putImageData(id, 0, 0);
 }
 
-function doWhiteBalance(d){
-  let r=0,g=0,b=0,n=d.length/4;
-  for(let i=0;i<d.length;i+=4){r+=d[i];g+=d[i+1];b+=d[i+2]}
-  const gr=(r+g+b)/(3*n);
-  const rs=Math.min(1.4,gr/(r/n||1)),gs=Math.min(1.4,gr/(g/n||1)),bs=Math.min(1.4,gr/(b/n||1));
-  for(let i=0;i<d.length;i+=4){d[i]=Math.min(255,d[i]*rs);d[i+1]=Math.min(255,d[i+1]*gs);d[i+2]=Math.min(255,d[i+2]*bs)}
-}
-
-// CLAHE-style adaptive contrast — much better than simple auto-levels
-function doCLAHE(d, w, h) {
-  const tileW=Math.max(1,Math.floor(w/8)), tileH=Math.max(1,Math.floor(h/8));
-  const lut = buildCLAHELUT(d, w, h, tileW, tileH, 3.0);
-  for(let i=0;i<d.length;i+=4){
-    for(let c=0;c<3;c++) d[i+c]=Math.min(255,Math.max(0,lut[d[i+c]]));
-  }
-}
-function buildCLAHELUT(d, w, h, tw, th, clipLimit) {
-  const n = w * h;
-  const hist = new Uint32Array(256);
-  for(let i=0;i<d.length;i+=4){
-    const lum = Math.round(0.299*d[i]+0.587*d[i+1]+0.114*d[i+2]);
-    hist[lum]++;
-  }
-  // Clip and redistribute
-  const clip = Math.round(clipLimit * n / 256);
-  let excess = 0;
-  for(let v=0;v<256;v++){ if(hist[v]>clip){ excess+=hist[v]-clip; hist[v]=clip; } }
-  const perBin = Math.floor(excess/256);
-  for(let v=0;v<256;v++) hist[v]+=perBin;
-  // Build CDF → LUT
-  const lut = new Uint8ClampedArray(256);
-  let cdf=0;
-  for(let v=0;v<256;v++){ cdf+=hist[v]; lut[v]=Math.round(cdf*255/n); }
-  return lut;
-}
-
-// S-curve: lift shadows, punch midtones, slightly protect highlights
-function doSCurve(d) {
-  const lut = new Uint8ClampedArray(256);
-  for(let v=0;v<256;v++){
-    const x = v / 255;
-    // Smooth S-curve via cubic bezier approximation
-    const s = x < 0.5
-      ? 2 * x * x * (1.5 - x)          // lift shadows + midtones
-      : 1 - 2*(1-x)*(1-x)*(1.5-(1-x)); // compress highlights gently
-    lut[v] = Math.min(255, Math.max(0, Math.round(s * 270 - 7))); // slight boost
-  }
-  for(let i=0;i<d.length;i+=4){
-    d[i]=lut[d[i]]; d[i+1]=lut[d[i+1]]; d[i+2]=lut[d[i+2]];
-  }
-}
-
-// Vibrance: boost undersaturated colors, protect skin tones
-function doVibrance(d, amt) {
-  for(let i=0;i<d.length;i+=4){
-    const r=d[i],g=d[i+1],b=d[i+2];
-    const mx=Math.max(r,g,b), mn=Math.min(r,g,b);
-    const sat=(mx===0)?0:(mx-mn)/mx;
-    // Less boost for already-saturated or skin-tone pixels
-    const boost=(1-sat)*(amt/100);
-    const avg=(r+g+b)/3;
-    d[i]  =Math.min(255,Math.round(r+(r-avg)*boost));
-    d[i+1]=Math.min(255,Math.round(g+(g-avg)*boost));
-    d[i+2]=Math.min(255,Math.round(b+(b-avg)*boost));
-  }
-}
-
-function doSkinSmooth(imageData, w, h, radius=2){
+function doSkinSmooth(imageData, w, h) {
   const d = imageData.data;
   const tmp = new Uint8ClampedArray(d);
 
-  const isSkin = (r,g,b)=>{
-    const Y=0.299*r+0.587*g+0.114*b;
-    const Cb=-0.169*r-0.331*g+0.5*b+128;
-    const Cr=0.5*r-0.419*g-0.081*b+128;
-    return Y>60 && Y<220 && Cb>80 && Cb<130 && Cr>135 && Cr<175;
+  const isSkin = (r,g,b) => {
+    const Y  =  0.299*r + 0.587*g + 0.114*b;
+    const Cb = -0.169*r - 0.331*g + 0.5*b   + 128;
+    const Cr =  0.5*r   - 0.419*g - 0.081*b + 128;
+    return Y > 60 && Y < 220 && Cb > 80 && Cb < 130 && Cr > 135 && Cr < 175;
   };
 
-  for(let y=1;y<h-1;y++){
-    for(let x=1;x<w-1;x++){
-      const i=(y*w+x)*4;
-
-      if(!isSkin(d[i],d[i+1],d[i+2])) continue;
-
-      // Edge detection (DO NOT smooth edges)
-      const gx = d[i] - d[i-4];
-      const gy = d[i] - d[i-w*4];
-      const edge = Math.abs(gx)+Math.abs(gy);
-
-      if(edge > 20) continue; // preserve details
-
-      let sr=0,sg=0,sb=0,count=0;
-
-      for(let dy=-1;dy<=1;dy++){
-        for(let dx=-1;dx<=1;dx++){
-          const ni=((y+dy)*w+(x+dx))*4;
-          sr+=d[ni]; sg+=d[ni+1]; sb+=d[ni+2];
-          count++;
+  for (let y = 1; y < h - 1; y++) {
+    for (let x = 1; x < w - 1; x++) {
+      const i = (y * w + x) * 4;
+      if (!isSkin(d[i], d[i+1], d[i+2])) continue;
+      const gx = d[i] - d[i - 4];
+      const gy = d[i] - d[i - w * 4];
+      if (Math.abs(gx) + Math.abs(gy) > 20) continue;
+      let sr=0, sg=0, sb=0, cnt=0;
+      for (let dy=-1; dy<=1; dy++) {
+        for (let dx=-1; dx<=1; dx++) {
+          const ni = ((y+dy)*w+(x+dx))*4;
+          sr+=d[ni]; sg+=d[ni+1]; sb+=d[ni+2]; cnt++;
         }
       }
-
-      // very light smoothing (NOT blur)
-      tmp[i]   = d[i]*0.6 + (sr/count)*0.4;
-      tmp[i+1] = d[i+1]*0.6 + (sg/count)*0.4;
-      tmp[i+2] = d[i+2]*0.6 + (sb/count)*0.4;
+      tmp[i]   = d[i]   * 0.6 + (sr/cnt) * 0.4;
+      tmp[i+1] = d[i+1] * 0.6 + (sg/cnt) * 0.4;
+      tmp[i+2] = d[i+2] * 0.6 + (sb/cnt) * 0.4;
     }
   }
-
-  for(let i=0;i<d.length;i++){
-    if(tmp[i]!==0) d[i]=tmp[i];
-  }
-}
-
-// Unsharp mask with configurable radius and amount
-function doUnsharpMask(imageData, w, h, r=1.0, amt=1.3){
-  const src=imageData.data, blurred=gaussianBlur(src,w,h,r), dst=new Uint8ClampedArray(src.length);
-  for(let i=0;i<src.length-3;i+=4){
-    for(let c=0;c<3;c++) dst[i+c]=Math.min(255,Math.max(0,Math.round(src[i+c]+amt*(src[i+c]-blurred[i+c]))));
-    dst[i+3]=src[i+3];
-  }
-  return new ImageData(dst,w,h);
-}
-function gaussianBlur(src,w,h,r){
-  r=Math.max(1,Math.round(r));
-  let buf=new Float32Array(src.length),tmp=new Float32Array(src.length);
-  for(let i=0;i<src.length;i++)buf[i]=src[i];
-  for(let pass=0;pass<3;pass++){
-    for(let y=0;y<h;y++)for(let x=0;x<w;x++){
-      let sr=0,sg=0,sb=0,cnt=0;
-      for(let dx=-r;dx<=r;dx++){const px=Math.min(w-1,Math.max(0,x+dx)),i2=(y*w+px)*4;sr+=buf[i2];sg+=buf[i2+1];sb+=buf[i2+2];cnt++}
-      const i=(y*w+x)*4;tmp[i]=sr/cnt;tmp[i+1]=sg/cnt;tmp[i+2]=sb/cnt;tmp[i+3]=buf[i+3];
-    }
-    for(let y=0;y<h;y++)for(let x=0;x<w;x++){
-      let sr=0,sg=0,sb=0,cnt=0;
-      for(let dy=-r;dy<=r;dy++){const py=Math.min(h-1,Math.max(0,y+dy)),i2=(py*w+x)*4;sr+=tmp[i2];sg+=tmp[i2+1];sb+=tmp[i2+2];cnt++}
-      const i=(y*w+x)*4;buf[i]=sr/cnt;buf[i+1]=sg/cnt;buf[i+2]=sb/cnt;buf[i+3]=tmp[i+3];
-    }
-  }
-  return buf;
+  for (let i = 0; i < d.length; i++) { if (tmp[i] !== 0) d[i] = tmp[i]; }
 }
 
 // ══════════════════════════════════════════════════════════════
 // REPROCESS ALL
 // ══════════════════════════════════════════════════════════════
-async function reprocessAll(){
-  if(!photos.length)return;
-  setProcActive(true,0,'REPROCESSING...');
-  const old=[...photos];photos=[];photoGrid.innerHTML='';
-  for(let i=0;i<old.length;i++){
-    setProgress(i/old.length*100,`REPROCESSING ${i+1}/${old.length}`);
-    const src=await dataURLtoCanvas(old[i].sourceURL);
-    const {originalURL,enhancedURL,faceDetected,bgRemoved}=await processPhoto(src);
-    const p={...old[i],originalURL,enhancedURL,faceDetected,bgRemoved};
-    photos.push(p);addCard(p);
+async function reprocessAll() {
+  if (!photos.length) return;
+  setProcActive(true, 0, 'REPROCESSING...');
+  const old = [...photos]; photos = []; photoGrid.innerHTML = '';
+  for (let i = 0; i < old.length; i++) {
+    setProgress(i/old.length*100, `REPROCESSING ${i+1}/${old.length}`);
+    const src = await dataURLtoCanvas(old[i].sourceURL);
+    const { originalURL, enhancedURL, faceDetected, bgRemoved } = await processPhoto(src);
+    const p = {...old[i], originalURL, enhancedURL, faceDetected, bgRemoved};
+    photos.push(p); addCard(p);
   }
   setProcActive(false);
-  buildPrintPreview();buildPrintSheet();updateUI();
+  buildPrintPreview(); buildPrintSheet(); updateUI();
 }
 
 // ══════════════════════════════════════════════════════════════
 // CARD / GALLERY
 // ══════════════════════════════════════════════════════════════
-function addCard({id,name,originalURL,enhancedURL,faceDetected,bgRemoved}){
-  const card=document.createElement('div');
-  card.className='photo-card';card.dataset.id=id;
-  const ftag=faceDetected?`<span class="tag face">👤 AI</span>`:`<span class="tag fallback">📐 AUTO</span>`;
-  const btag=bgRemoved?`<span class="tag bg">✂ BG</span>`:'';
-  card.innerHTML=`
+function addCard({id,name,originalURL,enhancedURL,faceDetected,bgRemoved}) {
+  const card = document.createElement('div');
+  card.className = 'photo-card'; card.dataset.id = id;
+  const ftag = faceDetected
+    ? `<span class="tag face">👤 AI</span>`
+    : `<span class="tag fallback">📐 AUTO</span>`;
+  const btag = bgRemoved ? `<span class="tag bg">✂ ISNet</span>` : '';
+  card.innerHTML = `
     <div class="card-imgs">
       <div class="cimg-wrap"><img src="${originalURL}" loading="lazy"><span class="cimg-label">ORIGINAL</span></div>
       <div class="cimg-wrap"><img src="${enhancedURL}" loading="lazy"><span class="cimg-label enh">ENHANCED ✓</span></div>
     </div>
     <div class="card-foot">${ftag}${btag}<span class="card-name" title="${name}">${name}</span><button class="card-del" onclick="deletePhoto(${id})">✕</button></div>`;
-  photoGrid.appendChild(card);updateUI();
+  photoGrid.appendChild(card); updateUI();
 }
-function deletePhoto(id){
-  photos=photos.filter(p=>p.id!==id);
-  const el=photoGrid.querySelector(`[data-id="${id}"]`);if(el)el.remove();
-  if(!photos.length){clearAll();return;}
-  buildPrintPreview();buildPrintSheet();updateUI();
+function deletePhoto(id) {
+  photos = photos.filter(p => p.id !== id);
+  const el = photoGrid.querySelector(`[data-id="${id}"]`); if (el) el.remove();
+  if (!photos.length) { clearAll(); return; }
+  buildPrintPreview(); buildPrintSheet(); updateUI();
 }
-function clearAll(){
-  photos=[];photoGrid.innerHTML='';a4Paper.innerHTML='';printSheet.innerHTML='';
-  gallery.style.display='none';previewSection.style.display='none';actionBar.style.display='none';
+function clearAll() {
+  photos = []; photoGrid.innerHTML = ''; a4Paper.innerHTML = ''; printSheet.innerHTML = '';
+  gallery.style.display='none'; previewSection.style.display='none'; actionBar.style.display='none';
 }
 
 // ══════════════════════════════════════════════════════════════
 // PRINT PREVIEW & SHEET
 // ══════════════════════════════════════════════════════════════
-function getPhotosForPrint(){
-  const copies=Math.max(1,parseInt(document.getElementById('copiesInput').value)||6);
-  const res=[];photos.forEach(p=>{for(let i=0;i<copies;i++)res.push(p)});return res;
+function getPhotosForPrint() {
+  const copies = Math.max(1, parseInt(document.getElementById('copiesInput').value) || 6);
+  const res = []; photos.forEach(p => { for(let i=0;i<copies;i++) res.push(p); }); return res;
 }
-function buildPrintPreview(){
-  if(!photos.length)return;
-  const preset=PRESETS[S.preset],cols=S.cols,pp=getPhotosForPrint();
-  const pageW=557,gap=7,photoW=Math.floor((pageW-(cols-1)*gap)/cols),photoH=Math.round(photoW*preset.h/preset.w);
-  a4Paper.innerHTML='';a4Paper.style.gap=gap+'px';
-  pp.forEach(p=>{const img=document.createElement('img');img.src=p.enhancedURL;img.className='pv-photo';img.style.width=photoW+'px';img.style.height=photoH+'px';img.style.objectFit='cover';a4Paper.appendChild(img)});
-  const rows=Math.ceil(pp.length/cols);
-  a4Paper.style.minHeight=Math.max(842,rows*(photoH+gap)+38)+'px';
-  const mm2px=mm=>Math.round(mm/25.4*S.dpi);
-  const copies=Math.max(1,parseInt(document.getElementById('copiesInput').value)||6);
-  document.getElementById('pvInfo').textContent=`${pp.length} photos · ${photos.length}×${copies} · ${preset.label} · ${mm2px(preset.w)}×${mm2px(preset.h)}px@${S.dpi}DPI`;
+function buildPrintPreview() {
+  if (!photos.length) return;
+  const preset=PRESETS[S.preset], cols=S.cols, pp=getPhotosForPrint();
+  const pageW=557, gap=7;
+  const photoW = Math.floor((pageW-(cols-1)*gap)/cols);
+  const photoH = Math.round(photoW*preset.h/preset.w);
+  a4Paper.innerHTML = ''; a4Paper.style.gap = gap+'px';
+  pp.forEach(p => {
+    const img = document.createElement('img');
+    img.src = p.enhancedURL; img.className='pv-photo';
+    img.style.width=photoW+'px'; img.style.height=photoH+'px'; img.style.objectFit='cover';
+    a4Paper.appendChild(img);
+  });
+  const rows = Math.ceil(pp.length/cols);
+  a4Paper.style.minHeight = Math.max(842, rows*(photoH+gap)+38)+'px';
+  const mm2px = mm => Math.round(mm/25.4*S.dpi);
+  const copies = Math.max(1, parseInt(document.getElementById('copiesInput').value)||6);
+  document.getElementById('pvInfo').textContent =
+    `${pp.length} photos · ${photos.length}×${copies} · ${preset.label} · ${mm2px(preset.w)}×${mm2px(preset.h)}px@${S.dpi}DPI`;
 }
-function buildPrintSheet(){
-  if(!photos.length)return;
-  const preset=PRESETS[S.preset],gap_mm=2,pageW_mm=200,pageH_mm=287;
-  const maxCols=Math.min(S.cols,Math.floor((pageW_mm+gap_mm)/(preset.w+gap_mm)));
-  const maxRows=Math.floor((pageH_mm+gap_mm)/(preset.h+gap_mm));
-  const perPage=maxCols*maxRows,pp=getPhotosForPrint();
-  printSheet.innerHTML='';
-  for(let i=0;i<pp.length;i+=perPage){
-    const slice=pp.slice(i,i+perPage),page=document.createElement('div');
+function buildPrintSheet() {
+  if (!photos.length) return;
+  const preset=PRESETS[S.preset], gap_mm=2, pageW_mm=200, pageH_mm=287;
+  const maxCols = Math.min(S.cols, Math.floor((pageW_mm+gap_mm)/(preset.w+gap_mm)));
+  const maxRows = Math.floor((pageH_mm+gap_mm)/(preset.h+gap_mm));
+  const perPage = maxCols*maxRows, pp=getPhotosForPrint();
+  printSheet.innerHTML = '';
+  for (let i=0; i<pp.length; i+=perPage) {
+    const slice=pp.slice(i,i+perPage), page=document.createElement('div');
     page.className='print-page';
     page.style.cssText=`width:210mm;min-height:297mm;padding:5mm;display:flex;flex-wrap:wrap;align-content:flex-start;gap:${gap_mm}mm;background:#fff;page-break-after:always;`;
-    slice.forEach(p=>{const img=document.createElement('img');img.src=p.enhancedURL;img.className='print-photo';img.style.cssText=`width:${preset.w}mm;height:${preset.h}mm;object-fit:cover;display:block;flex-shrink:0`;page.appendChild(img)});
+    slice.forEach(p => {
+      const img=document.createElement('img'); img.src=p.enhancedURL; img.className='print-photo';
+      img.style.cssText=`width:${preset.w}mm;height:${preset.h}mm;object-fit:cover;display:block;flex-shrink:0`;
+      page.appendChild(img);
+    });
     printSheet.appendChild(page);
   }
 }
-function doPrint(){ if(!photos.length){toast('No photos','error');return;} buildPrintSheet();window.print(); }
-async function downloadZIP(){
+function doPrint() { if(!photos.length){toast('No photos','error');return;} buildPrintSheet(); window.print(); }
+async function downloadZIP() {
   if(!photos.length)return;
   toast('Creating ZIP...','info');
-  const zip=new JSZip(),folder=zip.folder('passport_photos');
+  const zip=new JSZip(), folder=zip.folder('passport_photos');
   photos.forEach((p,i)=>folder.file(`photo_${String(i+1).padStart(3,'0')}.jpg`,p.enhancedURL.split(',')[1],{base64:true}));
   const blob=await zip.generateAsync({type:'blob'});
   const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download='passport_photos.zip';a.click();URL.revokeObjectURL(a.href);
@@ -987,12 +716,25 @@ async function downloadZIP(){
 // ══════════════════════════════════════════════════════════════
 // UI HELPERS
 // ══════════════════════════════════════════════════════════════
-function showUI(){ gallery.style.display='block';previewSection.style.display='block';actionBar.style.display='flex';updateUI(); }
-function updateUI(){ const n=photos.length,p=PRESETS[S.preset]; document.getElementById('galleryCount').textContent=n; document.getElementById('infoPill').textContent=`${n} PHOTO${n!==1?'S':''} · ${p.label}`; }
-function setProcActive(on,pct,text){ procBar.classList.toggle('active',on);if(text)procText.textContent=text;if(pct!==undefined)progFill.style.width=pct+'%';if(!on)setTimeout(()=>{progFill.style.width='0%'},400); }
-function setProgress(pct,text){ progFill.style.width=pct+'%';if(text)procText.textContent=text; }
+function showUI() { gallery.style.display='block'; previewSection.style.display='block'; actionBar.style.display='flex'; updateUI(); }
+function updateUI() {
+  const n=photos.length, p=PRESETS[S.preset];
+  document.getElementById('galleryCount').textContent=n;
+  document.getElementById('infoPill').textContent=`${n} PHOTO${n!==1?'S':''} · ${p.label}`;
+}
+function setProcActive(on,pct,text) {
+  procBar.classList.toggle('active',on);
+  if(text)procText.textContent=text;
+  if(pct!==undefined)progFill.style.width=pct+'%';
+  if(!on)setTimeout(()=>{progFill.style.width='0%'},400);
+}
+function setProgress(pct,text) { if(pct!==undefined)progFill.style.width=pct+'%'; if(text)procText.textContent=text; }
 let _tt;
-function toast(msg,type=''){ const el=document.getElementById('toast');el.textContent=msg;el.className='show '+type;clearTimeout(_tt);_tt=setTimeout(()=>el.className='',3200); }
+function toast(msg,type='') {
+  const el=document.getElementById('toast');
+  el.textContent=msg; el.className='show '+type;
+  clearTimeout(_tt); _tt=setTimeout(()=>el.className='',3200);
+}
 </script>
 </body>
 </html>
