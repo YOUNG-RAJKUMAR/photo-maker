@@ -487,48 +487,33 @@ async function detectFace(canvas) {
   } catch(e){ return null; }
 }
 
-// ========== CROP FUNCTION WITH REDUCED ZOOM (LESS ZOOM) ==========
 function cropToPassport(src, preset, dpi, detection) {
   const toP = mm => Math.round(mm / 25.4 * dpi);
   const tw = toP(preset.w), th = toP(preset.h);
   const c = document.createElement('canvas'); c.width=tw; c.height=th;
   const ctx = get2d(c, true);
   ctx.fillStyle = S.bg; ctx.fillRect(0,0,tw,th);
-  
   if (detection) {
     const [x1,y1] = detection.topLeft, [x2,y2] = detection.bottomRight;
-    const faceH = y2 - y1;
-    const faceCX = (x1 + x2)/2;
-    // Reduce zoom: target head height is now 62% of photo height (was 75%)
-    const targetHeadH = th * 0.62;   // <-- LESS ZOOM: head occupies 62% instead of 75%
-    const scale = targetHeadH / faceH;
-    // Adjust crown position: move slightly higher to keep balanced framing
-    const crownY = y1 - faceH * 0.30;
-    const chinY = y2 + faceH * 0.08;
-    const headH = chinY - crownY;
-    const finalScale = targetHeadH / headH;
-    const srcPhotoH = th / finalScale;
-    const srcPhotoW = tw / finalScale;
-    const srcY = crownY - (th * 0.05 / finalScale);
+    const faceH = y2 - y1, faceCX = (x1 + x2)/2, crownY = y1 - faceH*0.35, chinY = y2 + faceH*0.05;
+    const headH = chinY - crownY, targetHeadH = th*0.75, scale = targetHeadH / headH;
+    const srcPhotoH = th/scale, srcPhotoW = tw/scale, srcY = crownY - (th*0.08/scale);
     const srcX = Math.max(0, Math.min(src.width - srcPhotoW, faceCX - srcPhotoW/2));
     ctx.drawImage(src, srcX, srcY, srcPhotoW, srcPhotoH, 0, 0, tw, th);
   } else {
-    // Fallback: reduce zoom by drawing the image at 88% of canvas size, centered
-    const zoomFactor = 0.88;   // <-- LESS ZOOM: image occupies 88% of frame area
-    const dw = tw * zoomFactor;
-    const dh = th * zoomFactor;
-    const ox = (tw - dw) / 2;
-    const oy = (th - dh) * 0.45; // center vertically with slight upward bias
-    ctx.drawImage(src, 0, 0, src.width, src.height, ox, oy, dw, dh);
+    const sa = src.width/src.height, da = tw/th;
+    let dw,dh,ox,oy;
+    if (sa>da) { dh=th; dw=src.width*(th/src.height); ox=(tw-dw)/2; oy=0; }
+    else { dw=tw; dh=src.height*(tw/src.width); ox=0; oy=(th-dh)*0.12; }
+    ctx.drawImage(src,0,0,src.width,src.height,ox,oy,dw,dh);
   }
-  
   const borderPx = Math.max(2, Math.round(tw*0.012));
   ctx.strokeStyle = '#888888'; ctx.lineWidth = borderPx;
   ctx.strokeRect(borderPx/2, borderPx/2, tw - borderPx, th - borderPx);
   return c;
 }
 
-// === WARM SKIN TONE + HD SMOOTH TEXTURE (No aggressive orange) ===
+// === UPDATED: WARM SKIN TONE + HD SMOOTH TEXTURE (No aggressive orange) ===
 function applyOrangeSkinSmooth(canvas) {
   if (!S.orangeSmooth) return canvas;
   const w = canvas.width, h = canvas.height;
@@ -573,9 +558,11 @@ function applyOrangeSkinSmooth(canvas) {
       let smoothB = Math.round(sumB/count);
       
       // WARM SKIN TONE: subtle golden/warm shift (NOT full orange)
+      // Gentle increase in red, slight reduction in blue, green almost neutral
       let finalR = Math.min(255, Math.round(smoothR * 1.05));
       let finalG = Math.min(255, Math.round(smoothG * 0.99));
       let finalB = Math.min(255, Math.round(smoothB * 0.94));
+      // Additional very mild warmth for natural glow
       finalR = Math.min(255, finalR + 2);
       
       smoothed[idx] = finalR;
@@ -668,6 +655,7 @@ function buildPrintPreview(){
   pp.forEach(p=>{const img=document.createElement('img');img.src=p.enhancedURL;img.className='pv-photo';img.style.width=photoW+'px';img.style.height=photoH+'px';img.style.objectFit='cover';a4Paper.appendChild(img)});
   const rows=Math.ceil(pp.length/cols);
   a4Paper.style.minHeight=Math.max(842,rows*(photoH+gap)+38)+'px';
+  const mm2px=mm=>Math.round(mm/25.4*S.dpi);
   const copies=Math.max(1,parseInt(document.getElementById('copiesInput').value)||6);
   document.getElementById('pvInfo').textContent=`${pp.length} photos · ${photos.length}×${copies} · ${preset.label} · WARM SKIN ACTIVE`;
 }
