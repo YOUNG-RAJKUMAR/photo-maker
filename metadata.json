@@ -1,0 +1,5 @@
+{
+  "name": "AI Passport Photo Generator",
+  "description": "An application that uses AI to transform your uploaded photo into a professional passport-style picture. It adjusts clothing, background, and lighting while preserving your facial features.",
+  "requestFramePermissions": []
+}
